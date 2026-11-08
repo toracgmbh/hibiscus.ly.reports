@@ -100,7 +100,8 @@ jobs:
             echo "torac/signing-cert.pem enthält Schlüsselmaterial" >&2
             exit 1
           fi
-          xmllint --noout "$SITE/repository.xml" "$SITE/hibiscus.ly.reports/plugin.xml"
+          python3 -I -c 'import sys, xml.dom.minidom; [xml.dom.minidom.parse(f) for f in sys.argv[1:]]; print("XML wohlgeformt")' \
+            "$SITE/repository.xml" "$SITE/hibiscus.ly.reports/plugin.xml"
 
       - name: ZIP signieren
         if: env.HAS_SIGNING_KEY == 'true'
