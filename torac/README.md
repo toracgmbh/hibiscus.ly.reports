@@ -80,7 +80,12 @@ von Hand starten. Er besteht aus drei Jobs mit je minimalen Rechten:
    **unsignierte** ZIP entstehen im Layout des Originals. In der `plugin.xml`
    (auch in der ZIP) werden Version und `<url>` per Python XML-sicher ersetzt
    (`torac/patch-plugin-xml.py`); die `plugin.xml` im Repo bleibt unverändert.
-   Ein Selbsttest signiert die ZIP mit einem Wegwerf-Schlüssel, der im Job entsteht,
+   `build-plugin.sh` löscht den Ausgabeordner (`OUT_DIR`) nur, wenn er nicht
+existiert, leer ist oder die von ihm angelegte Markierungsdatei
+`.build-plugin-out` enthält, und nie, wenn er (nach Auflösen von Symlinks, `.` und
+`..`) das Repo, `$HOME`, `/` oder ein Elternordner davon ist. Das prüft
+`torac/test-build-plugin-guard.sh` vor dem Bauen (nur in einem Temp-Ordner,
+ohne Build). Ein Selbsttest signiert die ZIP mit einem Wegwerf-Schlüssel, der im Job entsteht,
    und prüft die Signatur mit `openssl dgst -sha1 -verify` (inklusive Gegenprobe
    mit veränderter ZIP). Der Produktionsschlüssel kommt dabei nicht vor, nichts
    davon wird veröffentlicht. Zum Schluss legt der Job die ZIP als Artefakt ab.

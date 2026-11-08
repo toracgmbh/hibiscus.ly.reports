@@ -10,7 +10,15 @@
 #   HIBISCUS_DIR      entpacktes Hibiscus-Release (Ordner mit hibiscus.jar)
 #   PAGES_BASE_URL    Wurzel des Repositories, z. B. https://toracgmbh.github.io/hibiscus.ly.reports
 #   BUILD_NUMBER      laufende Build-Nummer (github.run_number), 1..9999
-#   OUT_DIR           Ausgabeordner (wird neu angelegt), Standard: build-output/torac
+#   OUT_DIR           Ausgabeordner (wird neu angelegt), Standard: build-output/torac.
+#                     Relative Pfade gelten ab dem aktuellen Ordner des Aufrufs. Der Pfad wird
+#                     aufgelöst (Symlinks, ".", ".."), bevor etwas gelöscht wird. Der Ordner
+#                     wird nur gelöscht, wenn er nicht existiert, leer ist oder die Markierungs-
+#                     datei .build-plugin-out enthält (die das Skript selbst anlegt), und nie,
+#                     wenn er das Repo, $HOME, "/" oder ein Elternordner davon ist.
+#   BUILD_PLUGIN_STOP_AFTER   nur für torac/test-build-plugin-guard.sh:
+#                     "check" beendet das Skript nach der Pfadprüfung, "prepare" nach dem
+#                     Neuanlegen des Ausgabeordners (jeweils ohne Build).
 #
 # Ergebnis in OUT_DIR:
 #   classpath.txt                  Classpath (wie compile.path in build/build.xml), auch für die Tests
@@ -29,12 +37,40 @@ die() { echo "build-plugin.sh: $*" >&2; exit 1; }
 : "${PAGES_BASE_URL:?PAGES_BASE_URL fehlt}"
 : "${BUILD_NUMBER:?BUILD_NUMBER fehlt}"
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT_DIR="${OUT_DIR:-$REPO_DIR/build-output/torac}"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 PLUGIN=hibiscus.ly.reports
 PAGES_BASE_URL="${PAGES_BASE_URL%/}"
 [[ "$PAGES_BASE_URL" =~ ^https://[A-Za-z0-9.-]+(/[A-Za-z0-9._-]+)*$ ]] \
   || die "PAGES_BASE_URL '$PAGES_BASE_URL' hat nicht die erwartete Form https://host/pfad"
+
+# --- Ausgabeordner prüfen und neu anlegen ------------------------------------
+# Der Pfad wird vor dem Löschen aufgelöst, auch wenn der Ordner noch nicht
+# existiert (existierender Teil: Symlinks aufgelöst, Rest normalisiert).
+OUT_MARKER=.build-plugin-out
+real_path() { python3 -I -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$1"; }
+# is_within <Ordner> <Pfad>: wahr, wenn <Pfad> gleich <Ordner> ist oder darunter liegt
+is_within() { [ "$1" = "/" ] || [ "$2" = "$1" ] || [[ "$2" == "$1"/* ]]; }
+
+OUT_DIR="$(real_path "${OUT_DIR:-$REPO_DIR/build-output/torac}")"
+HOME_REAL=""
+if [ -n "${HOME:-}" ]; then HOME_REAL="$(real_path "$HOME")"; fi
+for protected in "$REPO_DIR" "$HOME_REAL"; do
+  if [ -n "$protected" ] && is_within "$OUT_DIR" "$protected"; then
+    die "OUT_DIR '$OUT_DIR' ist (oder enthält) '$protected' und wird nicht gelöscht. Bitte einen eigenen Ausgabeordner angeben."
+  fi
+done
+if [ -e "$OUT_DIR" ]; then
+  [ -d "$OUT_DIR" ] || die "OUT_DIR '$OUT_DIR' existiert und ist kein Ordner"
+  if [ -n "$(ls -A "$OUT_DIR")" ] && [ ! -f "$OUT_DIR/$OUT_MARKER" ]; then
+    die "OUT_DIR '$OUT_DIR' ist nicht leer und enthält keine Markierung $OUT_MARKER (kein Ausgabeordner dieses Skripts). Er wird nicht gelöscht; bitte leeren oder einen anderen Ordner angeben."
+  fi
+fi
+if [ "${BUILD_PLUGIN_STOP_AFTER:-}" = check ]; then echo "OUT_DIR geprüft: $OUT_DIR"; exit 0; fi
+
+rm -rf "$OUT_DIR"
+mkdir -p "$OUT_DIR/classes" "$OUT_DIR/dist/$PLUGIN" "$OUT_DIR/unsigned"
+: > "$OUT_DIR/$OUT_MARKER"
+if [ "${BUILD_PLUGIN_STOP_AFTER:-}" = prepare ]; then echo "OUT_DIR angelegt: $OUT_DIR"; exit 0; fi
 
 cd "$REPO_DIR"
 
@@ -56,12 +92,6 @@ PLUGIN_URL="$PAGES_BASE_URL/$PLUGIN/$PLUGIN.zip"
 echo "Upstream-Version: $UPSTREAM_VERSION, veröffentlichte Version: $VERSION"
 echo "Download-URL    : $PLUGIN_URL"
 
-case "$OUT_DIR" in
-  ""|/|"$HOME"|"$REPO_DIR") die "OUT_DIR '$OUT_DIR' ist als Ausgabeordner nicht zulässig" ;;
-esac
-rm -rf "$OUT_DIR"
-mkdir -p "$OUT_DIR/classes" "$OUT_DIR/dist/$PLUGIN" "$OUT_DIR/unsigned"
-OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 
 # --- Classpath ---------------------------------------------------------------
 # Genau wie compile.path in build/build.xml, in derselben Reihenfolge:
