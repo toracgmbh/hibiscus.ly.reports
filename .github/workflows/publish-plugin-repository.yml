@@ -18,6 +18,18 @@ on:
 permissions:
   contents: read
 
+# Ein Gruppenschlüssel für den ganzen Lauf (alle drei Jobs):
+# - main (push und workflow_dispatch): gemeinsame Gruppe "plugin-repository-publish".
+#   Läufe laufen strikt nacheinander in der Reihenfolge ihres Starts. Ein laufender
+#   Lauf wird nie abgebrochen; wartet schon einer, ersetzt ihn ein neuerer (der
+#   neueste Stand gewinnt). So signiert und veröffentlicht kein älterer Lauf nach
+#   einem neueren.
+# - Pull-Requests und andere Branches: je Ref eine eigene Gruppe, ein neuer Lauf
+#   bricht den laufenden ab. Sie blockieren main nie.
+concurrency:
+  group: ${{ github.ref == 'refs/heads/main' && 'plugin-repository-publish' || format('plugin-repository-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 env:
   PLUGIN: hibiscus.ly.reports
   PAGES_BASE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
@@ -39,10 +51,6 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-    # Je Ref ein Lauf; in Pull-Requests ersetzt ein neuer Push den laufenden Build.
-    concurrency:
-      group: plugin-build-${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     outputs:
       zip_sha256: ${{ steps.zip.outputs.sha256 }}
     steps:
@@ -195,9 +203,6 @@ jobs:
     environment: release
     permissions:
       contents: read
-    concurrency:
-      group: plugin-repository-publish
-      cancel-in-progress: false
     steps:
       # Ein erneuter Lauf (Re-run) baut die ZIP neu, mit anderen Bytes, aber
       # gleicher Versionsnummer. Das darf nicht veröffentlicht werden.
@@ -235,6 +240,43 @@ jobs:
           fi
           unzip -p "$PLUGIN.zip" "$PLUGIN/plugin.xml" | cmp - plugin.xml
           echo "Version: $(cat version.txt)"
+
+      # Sicherung gegen Rückschritte: Ist auf Pages schon eine Version veröffentlicht,
+      # die gleich oder größer ist als die dieses Laufs, wird nicht signiert.
+      # Versionen werden numerisch je Komponente verglichen (major.minor.patch).
+      - name: Veröffentlichte Version prüfen
+        run: |
+          set -euo pipefail
+          URL="$PAGES_BASE_URL/$PLUGIN/plugin.xml"
+          PUBLISHED="$RUNNER_TEMP/published-plugin.xml"
+          CODE="$(curl -sS -L --retry 3 -H 'Cache-Control: no-cache' -o "$PUBLISHED" -w '%{http_code}' "$URL?run=$GITHUB_RUN_ID")"
+          case "$CODE" in
+            404)
+              echo "Unter $URL ist noch nichts veröffentlicht, weiter."
+              exit 0
+              ;;
+            200) ;;
+            *)
+              echo "::error::Die veröffentlichte plugin.xml ließ sich nicht abrufen (HTTP $CODE, $URL)."
+              exit 1
+              ;;
+          esac
+          python3 -I - "$PUBLISHED" "$RUNNER_TEMP/unsigned/plugin.xml" <<'PY'
+          import re, sys
+          import xml.etree.ElementTree as ET
+
+          def version(path):
+              v = ET.parse(path).getroot().get("version") or ""
+              if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", v):
+                  sys.exit("::error::Version %r in %s ist nicht von der Form X.Y.Z" % (v, path))
+              return v, tuple(int(x) for x in v.split("."))
+
+          published, published_key = version(sys.argv[1])
+          current, current_key = version(sys.argv[2])
+          print("Veröffentlicht: %s, dieser Lauf: %s" % (published, current))
+          if published_key >= current_key:
+              sys.exit("::error::Auf Pages ist bereits Version %s veröffentlicht, dieser Lauf hat %s (nicht größer). Es wird nicht signiert und nicht veröffentlicht, damit kein Rückschritt entsteht. Bitte einen neuen Lauf starten: Actions, Run workflow auf main." % (published, current))
+          PY
 
       # Der einzige Schritt mit dem Schlüssel. Die Datei liegt im Runner-Temp mit
       # Rechten nur für den Besitzer und wird sofort wieder gelöscht.
@@ -300,12 +342,6 @@ jobs:
     permissions:
       pages: write
       id-token: write
-    # Gemeinsame Gruppe mit "sign": Läufe veröffentlichen nacheinander, ein
-    # laufender Job wird nie abgebrochen. Wartet schon ein Job der Gruppe, ersetzt
-    # ein neuerer den wartenden (der neueste Stand gewinnt).
-    concurrency:
-      group: plugin-repository-publish
-      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

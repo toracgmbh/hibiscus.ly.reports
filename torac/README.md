@@ -96,11 +96,21 @@ von Hand starten. Er besteht aus drei Jobs mit je minimalen Rechten:
    **Run workflow** auf `main` starten.
 3. **`deploy`** (nur `main`, Environment `github-pages`): `actions/deploy-pages`.
 
-`sign` und `deploy` teilen sich die Concurrency-Gruppe
-`plugin-repository-publish` (nichts wird abgebrochen, was schon läuft; Läufe
-veröffentlichen nacheinander, ein wartender Job wird durch einen neueren ersetzt,
-der neueste Stand gewinnt). Die Build-Jobs sind je Ref serialisiert; in
-Pull-Requests ersetzt ein neuer Push den laufenden Build.
+**Läufe nacheinander (Concurrency):** Der Gruppenschlüssel gilt für den ganzen
+Workflow-Lauf, nicht je Job. Läufe auf `main` (Push und `workflow_dispatch`)
+liegen in der gemeinsamen Gruppe `plugin-repository-publish` und laufen strikt
+nacheinander in der Reihenfolge ihres Starts. Ein laufender Lauf wird nie
+abgebrochen. Wartet schon ein Lauf, ersetzt ihn ein neuerer (der neueste Stand
+gewinnt, der ersetzte Lauf erscheint als abgebrochen). Damit signiert und
+veröffentlicht kein älterer Lauf nach einem neueren. Pull-Requests und andere
+Branches haben je Ref eine eigene Gruppe; ein neuer Push oder Lauf bricht den
+laufenden ab, und sie blockieren `main` nicht.
+
+**Schutz vor Rückschritten:** Vor dem Signieren holt `sign` die aktuell
+veröffentlichte `hibiscus.ly.reports/plugin.xml` von Pages (404 heißt: noch nichts
+veröffentlicht) und bricht ab, wenn deren Version gleich oder größer ist als die
+des Laufs (numerischer Vergleich je Komponente von `major.minor.patch`). Dann einen
+neuen Lauf über **Run workflow** auf `main` starten.
 
 **Pull-Requests und andere Branches** laufen nur durch `build`; `sign` und
 `deploy` werden übersprungen. Das Ergebnis liegt 7 Tage als Artefakt
