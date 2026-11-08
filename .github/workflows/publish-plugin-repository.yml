@@ -116,6 +116,11 @@ jobs:
           path: ${{ runner.temp }}/deps/download/hibiscus.zip
           key: willuhn-zip-${{ env.HIBISCUS_SHA256 }}
 
+      # Prüft, dass build-plugin.sh den Ausgabeordner nie löscht, wenn er das Repo,
+      # $HOME, "/" oder ein Elternordner davon ist (arbeitet nur in einem Temp-Ordner).
+      - name: Schutzprüfung des Ausgabeordners testen
+        run: torac/test-build-plugin-guard.sh
+
       - name: Plugin bauen (Jar und unsignierte ZIP)
         env:
           BUILD_NUMBER: ${{ github.run_number }}
