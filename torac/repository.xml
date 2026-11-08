@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Jameica-Repository der torac GmbH. @PAGES_BASE_URL@ setzt der Workflow beim Veröffentlichen. -->
+<repository xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:noNamespaceSchemaLocation="http://www.willuhn.de/schema/jameica-repository-1.0.xsd"
+            name="torac GmbH: Hibiscus-Erweiterungen">
+
+  <plugins name="hibiscus.ly.reports" certificate="@PAGES_BASE_URL@/signing-cert.pem">
+    <plugin url="@PAGES_BASE_URL@/hibiscus.ly.reports" />
+  </plugins>
+
+</repository>
