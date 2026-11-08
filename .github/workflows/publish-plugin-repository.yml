@@ -1,0 +1,176 @@
+name: Plugin-Repository veröffentlichen
+
+# Baut hibiscus.ly.reports, signiert die ZIP und veröffentlicht sie als
+# Jameica-Repository auf GitHub Pages. Beschreibung: torac/README.md
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Jameica und Hibiscus kommen aus den offiziellen Releases von willuhn.de.
+  # Die URLs unter "releases/current" zeigen immer auf die jeweils neueste
+  # Version. Erscheint eine neue, schlägt die Prüfsumme fehl (der Build bricht
+  # dann ab): Version und SHA-256 hier nachziehen.
+  JAMEICA_VERSION: "2.12.0"
+  JAMEICA_URL: https://www.willuhn.de/products/jameica/releases/current/jameica/jameica-2.12.0.zip
+  JAMEICA_SHA256: 7a9ec5985563532976e24a3aba97f4f96cef168eae52edd8a85937f8c53fa301
+  HIBISCUS_VERSION: "2.12.4"
+  HIBISCUS_URL: https://www.willuhn.de/products/hibiscus/releases/current/hibiscus-2.12.4.zip
+  HIBISCUS_SHA256: d3ef83bbb58297dbf46bd530e0961596aa302f6375dd59c8df846e4a37d8c3f6
+
+jobs:
+  build:
+    name: Bauen und signieren
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      # Secrets stehen nicht in "if:" zur Verfügung; die Variable zeigt nur, ob
+      # das Secret vorhanden ist (nicht in Pull-Requests aus Forks).
+      HAS_SIGNING_KEY: ${{ secrets.PLUGIN_SIGNING_KEY != '' }}
+    steps:
+      - name: Quellcode holen
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Java 17 einrichten
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Jameica und Hibiscus laden und prüfen
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/deps/download"
+          cd "$RUNNER_TEMP/deps"
+          curl -sSfL --retry 3 -o download/jameica.zip "$JAMEICA_URL"
+          curl -sSfL --retry 3 -o download/hibiscus.zip "$HIBISCUS_URL"
+          echo "$JAMEICA_SHA256  download/jameica.zip" | sha256sum -c -
+          echo "$HIBISCUS_SHA256  download/hibiscus.zip" | sha256sum -c -
+          unzip -q download/jameica.zip
+          unzip -q download/hibiscus.zip
+          test -f jameica/jameica.jar
+          test -f hibiscus/hibiscus.jar
+          echo "JAMEICA_DIR=$RUNNER_TEMP/deps/jameica" >> "$GITHUB_ENV"
+          echo "HIBISCUS_DIR=$RUNNER_TEMP/deps/hibiscus" >> "$GITHUB_ENV"
+
+      - name: Plugin bauen (Jar und ZIP)
+        env:
+          PAGES_BASE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          OUT_DIR: ${{ runner.temp }}/plugin-build
+        run: |
+          set -euo pipefail
+          torac/build-plugin.sh
+          echo "PLUGIN_VERSION=$(cat "$OUT_DIR/version.txt")" >> "$GITHUB_ENV"
+
+      - name: MCP-Tests ausführen
+        env:
+          OUT_DIR: ${{ runner.temp }}/plugin-build
+        run: |
+          set -euo pipefail
+          CP="$(cat "$OUT_DIR/classpath.txt"):$OUT_DIR/classes"
+          mkdir -p "$OUT_DIR/test-classes"
+          javac --release 17 -encoding UTF-8 -nowarn -cp "$CP" -d "$OUT_DIR/test-classes" \
+            test/de/open4me/hibiscus/reports/mcp/McpJsonRpcHandlerTests.java \
+            test/de/open4me/hibiscus/reports/mcp/McpRequestLogTests.java \
+            torac/McpRunner.java
+          java -cp "$CP:$OUT_DIR/test-classes" McpRunner
+
+      - name: Repository zusammenstellen
+        env:
+          PAGES_BASE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+          OUT_DIR: ${{ runner.temp }}/plugin-build
+        run: |
+          set -euo pipefail
+          SITE="$OUT_DIR/site"
+          sed "s|@PAGES_BASE_URL@|$PAGES_BASE_URL|g" torac/repository.xml > "$SITE/repository.xml"
+          cp torac/signing-cert.pem "$SITE/signing-cert.pem"
+          # Das Zertifikat darf nur ein Zertifikat sein, kein Schlüssel.
+          if grep -q 'PRIVATE KEY' "$SITE/signing-cert.pem"; then
+            echo "torac/signing-cert.pem enthält Schlüsselmaterial" >&2
+            exit 1
+          fi
+          xmllint --noout "$SITE/repository.xml" "$SITE/hibiscus.ly.reports/plugin.xml"
+
+      - name: ZIP signieren
+        if: env.HAS_SIGNING_KEY == 'true'
+        env:
+          PLUGIN_SIGNING_KEY: ${{ secrets.PLUGIN_SIGNING_KEY }}
+          OUT_DIR: ${{ runner.temp }}/plugin-build
+        run: |
+          set -euo pipefail
+          umask 077
+          KEY_FILE="$(mktemp "$RUNNER_TEMP/signing-key.XXXXXX")"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          printf '%s\n' "$PLUGIN_SIGNING_KEY" > "$KEY_FILE"
+          cd "$OUT_DIR/site/hibiscus.ly.reports"
+          openssl dgst -sha1 -sign "$KEY_FILE" -out hibiscus.ly.reports.zip.sha1 hibiscus.ly.reports.zip
+          rm -f "$KEY_FILE"
+          trap - EXIT
+          echo "Signatur erzeugt ($(wc -c < hibiscus.ly.reports.zip.sha1) Bytes)"
+
+      - name: Signatur gegen das eingecheckte Zertifikat prüfen
+        if: env.HAS_SIGNING_KEY == 'true'
+        env:
+          OUT_DIR: ${{ runner.temp }}/plugin-build
+        run: |
+          set -euo pipefail
+          openssl x509 -in torac/signing-cert.pem -pubkey -noout > "$RUNNER_TEMP/signing-pub.pem"
+          cd "$OUT_DIR/site/hibiscus.ly.reports"
+          openssl dgst -sha1 -verify "$RUNNER_TEMP/signing-pub.pem" \
+            -signature hibiscus.ly.reports.zip.sha1 hibiscus.ly.reports.zip
+
+      - name: Signaturschlüssel fehlt
+        if: env.HAS_SIGNING_KEY != 'true'
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            echo "::warning::Kein Signaturschlüssel verfügbar (Pull-Request aus einem Fork). Das Ergebnis ist unsigniert und wird nicht veröffentlicht."
+          else
+            echo "::error::Das Repo-Secret PLUGIN_SIGNING_KEY fehlt."
+            exit 1
+          fi
+
+      - name: Ergebnis als Artefakt ablegen (zur Kontrolle)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plugin-repository
+          path: ${{ runner.temp }}/plugin-build/site
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Pages-Artefakt hochladen
+        if: github.event_name != 'pull_request' && env.HAS_SIGNING_KEY == 'true'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ runner.temp }}/plugin-build/site
+
+  deploy:
+    name: Auf GitHub Pages veröffentlichen
+    needs: build
+    # Nur der Stand von main wird veröffentlicht, nie Pull-Requests oder andere Branches.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Veröffentlichen
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
