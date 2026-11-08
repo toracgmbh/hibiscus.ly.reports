@@ -81,6 +81,11 @@ Aus Upstream 1.3.2 im 7. Lauf wird `1.3.20007`. Das ist neuer als 1.3.2, und
 nach einem Upstream-Merge auf 1.3.3 entsteht `1.3.30008` und höher, also wieder
 etwas Neueres.
 
+Weil der Patch-Teil so groß ist, wirkt die torac-Version in Jameica immer neuer
+als Upstream-Versionen mit gleichem `major.minor` (zum Beispiel 1.3.3 von
+open4me.de). Wer beide Repositories eingetragen hat, bekommt daher die
+torac-Version angeboten; besser ist es, nur eines der beiden einzutragen.
+
 **Neue Upstream-Version einspielen:** `upstream/main` nach `main` mergen und
 pushen. Die Version in `plugin.xml` kommt dann von Upstream, die Build-Nummer
 kommt vom Workflow.
