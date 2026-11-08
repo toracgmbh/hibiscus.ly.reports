@@ -338,6 +338,8 @@ public final class McpJsonRpcHandlerTests
             """));
         check(response.has("error"), "invalid transfer rejected");
         check(response.path("error").path("data").asText().contains("Betrag"), "invalid amount message");
+        check(response.path("error").path("message").asText().contains("Betrag"),
+            "error detail also in message for clients that hide data");
     }
 
     private static void rejectsTransferDraftWithFriendlyRequiredFieldMessage() throws Exception
