@@ -9,6 +9,7 @@ import java.util.Map;
 import org.openjdk.nashorn.api.scripting.ScriptObjectMirror;
 
 import de.open4me.hibiscus.reports.mcp.HibiscusSepaTransferDraftWriter;
+import de.open4me.hibiscus.reports.mcp.SepaPurpose;
 import de.open4me.hibiscus.reports.mcp.SepaTransferDraftWriter;
 import de.open4me.hibiscus.reports.model.ReportAccount;
 
@@ -35,32 +36,40 @@ public final class AutomationPayments
 
     public Object entwurf(Object value) throws Exception
     {
-        RequestData data = requestData(value);
-        validate(data);
-
-        String summary = summary(data);
+        Draft draft = draft(value);
 
         if (context.getTestlauf() || !context.getWriteAllowed())
         {
-            log.info("Testlauf: Zahlungsentwurf geplant:\n" + summary);
-            return Map.of("created", false, "testlauf", true, "accountId", data.account.getId());
+            log.info("Testlauf: Zahlungsentwurf geplant:\n" + draft.summary());
+            return Map.of("created", false, "testlauf", true, "accountId", draft.request().accountId());
         }
 
-        if (!dialogs.bestaetigen("Zahlungsentwurf bestaetigen", summary))
+        if (!dialogs.bestaetigen("Zahlungsentwurf bestaetigen", draft.summary()))
             throw new AutomationCanceledException("Zahlungsentwurf wurde abgebrochen.");
 
-        SepaTransferDraftWriter.Result result = writer.create(new SepaTransferDraftWriter.Request(
-            data.account.getId(), data.recipientName, data.iban, data.bic, data.amount, data.purpose,
-            data.purpose2, data.additionalPurposes, data.executionDate, null, null, null, data.art));
+        SepaTransferDraftWriter.Result result = writer.create(draft.request());
         log.info("Zahlungsentwurf angelegt: " + result.id());
         return result;
     }
 
     static String summary(Object value)
     {
+        return draft(value).summary();
+    }
+
+    /**
+     * Fuehrt den Verwendungszweck einmal zusammen und prueft ihn wie Hibiscus (Laenge und Zeichen). Bestaetigung,
+     * Testlauf-Log und Writer bekommen denselben Text; Fehler fallen vor der Bestaetigung auf.
+     */
+    static Draft draft(Object value)
+    {
         RequestData data = requestData(value);
         validate(data);
-        return summary(data);
+        String purpose = SepaPurpose.mergeForHibiscus(data.purpose, data.purpose2, data.additionalPurposes);
+        SepaTransferDraftWriter.Request request = new SepaTransferDraftWriter.Request(data.account.getId(),
+            data.recipientName, data.iban, data.bic, data.amount, purpose, null, List.of(), data.executionDate,
+            null, null, null, data.art);
+        return new Draft(summary(data, purpose), request);
     }
 
     private static RequestData requestData(Object value)
@@ -73,7 +82,7 @@ public final class AutomationPayments
             list(map.get("weitereVerwendungszwecke")), date(map.get("termin")), dialogText(map));
     }
 
-    private static String summary(RequestData data)
+    private static String summary(RequestData data, String purpose)
     {
         StringBuilder summary = new StringBuilder(data.art);
         if (!data.dialogText.isBlank())
@@ -84,7 +93,7 @@ public final class AutomationPayments
             .append("\nBIC: ").append(data.bic)
             .append("\nBetrag: ").append(data.amount)
             .append("\nTermin: ").append(data.executionDate)
-            .append("\nZweck: ").append(data.purpose);
+            .append("\nZweck: ").append(purpose == null ? "" : purpose);
         return summary.toString();
     }
 
@@ -166,6 +175,10 @@ public final class AutomationPayments
             throw new IllegalArgumentException("Empfaenger-IBAN fehlt.");
         if (data.amount == null)
             throw new IllegalArgumentException("Betrag fehlt.");
+    }
+
+    record Draft(String summary, SepaTransferDraftWriter.Request request)
+    {
     }
 
     private record RequestData(ReportAccount account, String art, String recipientName, String iban, String bic,
