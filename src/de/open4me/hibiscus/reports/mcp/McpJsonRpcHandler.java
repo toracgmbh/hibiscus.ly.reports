@@ -44,6 +44,7 @@ import de.open4me.hibiscus.reports.model.ReportTransaction;
 public final class McpJsonRpcHandler
 {
     static final String PROTOCOL_VERSION = "2025-11-25";
+    static final int MAX_DELETE_IDS = 200;
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final ReportTemplateContextFactory contextFactory;
@@ -212,7 +213,9 @@ public final class McpJsonRpcHandler
             tools.add(tool("hibiscus_transactions_delete", "Umsaetze loeschen",
                 "Loescht Umsaetze anhand ihrer IDs aus der lokalen Hibiscus-Datenbank. Bei der Bank aendert sich nichts. "
                     + "Nicht umkehrbar. Zuerst mit dryRun=true pruefen; jede echte Loeschung muss der Benutzer in "
-                    + "Hibiscus bestaetigen. Der Aufruf wartet bis zu 2 Minuten auf die Bestaetigung.",
+                    + "Hibiscus bestaetigen. Der Aufruf wartet bis zu "
+                    + HibiscusTransactionDeleter.CONFIRM_TIMEOUT.toSeconds() + " Sekunden auf die Bestaetigung. "
+                    + "Hoechstens " + MAX_DELETE_IDS + " IDs pro Aufruf.",
                 transactionsDeleteSchema()));
         tools.add(tool("hibiscus_sepa_transfer_create", "SEPA-Ueberweisungsentwurf anlegen",
             "Legt einen lokalen SEPA-Ueberweisungsentwurf in Hibiscus an. Der Auftrag wird nicht an die Bank gesendet.",
@@ -490,6 +493,11 @@ public final class McpJsonRpcHandler
             throw new IllegalArgumentException("ids: mindestens eine Umsatz-ID angeben.");
         if (transactionDeleter == null)
             throw new IllegalStateException("Kein Loeschdienst fuer Umsaetze verfuegbar.");
+        if (idsNode.size() > MAX_DELETE_IDS)
+            throw new IllegalArgumentException("ids: hoechstens " + MAX_DELETE_IDS + " Umsatz-IDs pro Aufruf.");
+        for (JsonNode id : idsNode)
+            if (!id.isTextual() && !id.isNumber())
+                throw new IllegalArgumentException("ids: nur Umsatz-IDs als Text oder Zahl angeben.");
         boolean dryRun = strictBool(arguments.get("dryRun"), "dryRun");
 
         Set<String> ids = new LinkedHashSet<>();

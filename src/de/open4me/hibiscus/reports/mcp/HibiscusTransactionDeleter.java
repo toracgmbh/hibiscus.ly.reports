@@ -20,16 +20,25 @@ import de.willuhn.logging.Logger;
 /** Deletes transactions in Hibiscus after an explicit confirmation dialog. Local only; the bank is not told. */
 public final class HibiscusTransactionDeleter implements TransactionDeleter
 {
-    static final Duration CONFIRM_TIMEOUT = Duration.ofMinutes(2);
+    /** Stays below the 60 s request timeout common MCP clients use, so a late click cannot delete unseen. */
+    static final Duration CONFIRM_TIMEOUT = Duration.ofSeconds(50);
 
     public HibiscusTransactionDeleter()
     {
     }
 
+    /** Hibiscus IDs are positive ints; leading zeros or out-of-range values are not IDs (status unknown). */
+    static boolean isTransactionId(String id)
+    {
+        if (id == null || !id.matches("[1-9]\\d{0,9}"))
+            return false;
+        return Long.parseLong(id) <= Integer.MAX_VALUE;
+    }
+
     @Override
     public Optional<Candidate> find(String id) throws Exception
     {
-        if (id == null || !id.matches("\\d+"))
+        if (!isTransactionId(id))
             return Optional.empty();
         Umsatz transaction;
         try
@@ -42,7 +51,7 @@ public final class HibiscusTransactionDeleter implements TransactionDeleter
         }
         Konto account = transaction.getKonto();
         return Optional.of(new Candidate(id, account.getID(), accountName(account),
-            toLocalDate(transaction.getDatum()), transaction.getBetrag(),
+            toLocalDate(transaction.getDatum()), transaction.getBetrag(), text(account.getWaehrung()),
             text(transaction.getGegenkontoName()), text(transaction.getZweck()), links(transaction)));
     }
 
@@ -101,6 +110,8 @@ public final class HibiscusTransactionDeleter implements TransactionDeleter
 
     private static LocalDate toLocalDate(java.util.Date date)
     {
+        if (date == null)
+            return null;
         if (date instanceof java.sql.Date sqlDate)
             return sqlDate.toLocalDate();
         return date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();

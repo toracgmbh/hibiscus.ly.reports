@@ -154,11 +154,10 @@ reported, they do not block deletion.
 - If the user is not at the machine (e.g. remote use through ngrok), the
   call must not delete anything. The existing confirm helper
   (`Application.getCallback().askUser`, used in `AutomationDialogs`) blocks
-  without a timeout; the builder decides whether to add a timeout (preferred:
-  a few minutes, then `notConfirmed` and the dialog closes) or accept
-  blocking. Either way, a late "yes" after the HTTP request has already
-  timed out on the client side must not be possible without the user
-  knowing; a timeout that closes the dialog avoids this.
+  without a timeout, so the dialog gets its own timeout: 50 seconds, then
+  `notConfirmed` and the dialog closes. It stays below the 60-second request
+  timeout common MCP clients use, so a late "yes" after the client has
+  already given up cannot delete anything.
 - Should respect the existing dialog gate (`AutomationDialogGate`) if that
   is what keeps dialogs from colliding with other modal work, at the
   builder's discretion.

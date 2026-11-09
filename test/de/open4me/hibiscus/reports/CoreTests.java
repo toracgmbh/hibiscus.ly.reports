@@ -16,6 +16,7 @@ import de.open4me.hibiscus.reports.data.BalanceSeriesAggregatorTests;
 import de.open4me.hibiscus.reports.data.DynamicReportTests;
 import de.open4me.hibiscus.reports.data.ReportCategoriesProxyTests;
 import de.open4me.hibiscus.reports.mcp.McpJsonRpcHandlerTests;
+import de.open4me.hibiscus.reports.mcp.HibiscusTransactionDeleterTests;
 import de.open4me.hibiscus.reports.mcp.TransactionDeleteConfirmationTests;
 import de.open4me.hibiscus.reports.mcp.McpNetworkSettingsTests;
 import de.open4me.hibiscus.reports.mcp.McpHttpServerTests;
@@ -51,6 +52,7 @@ public final class CoreTests
         McpOAuthHttpTests.run();
         McpJsonRpcHandlerTests.run();
         TransactionDeleteConfirmationTests.run();
+        HibiscusTransactionDeleterTests.run();
         AutomationCoreTests.run();
         AutomationSqlDialectTests.run();
         AutomationPaymentsTests.run();

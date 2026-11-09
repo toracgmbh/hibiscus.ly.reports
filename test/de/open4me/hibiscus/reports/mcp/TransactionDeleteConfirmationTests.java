@@ -15,12 +15,36 @@ public final class TransactionDeleteConfirmationTests
         confirmationTextShowsTransaction();
         confirmationTextMentionsUnknownIds();
         confirmationTextListsEveryTransaction();
+        confirmationTextShowsAccountCurrency();
+        confirmationTextHandlesMissingDate();
+    }
+
+    private static void confirmationTextShowsAccountCurrency()
+    {
+        TransactionDeleter.Candidate chf = new TransactionDeleter.Candidate("4711", "7", "Beispielkonto",
+            LocalDate.of(2025, 1, 14), -42.0, "CHF", "Beispiel GmbH", "Rechnung 4711", List.of());
+        String text = TransactionDeleteConfirmation.text(List.of(chf), 0);
+        check(text.contains("-42,00 CHF"), "account currency shown but was:\n" + text);
+        check(!text.contains("EUR"), "no hard-coded EUR");
+
+        TransactionDeleter.Candidate noCurrency = new TransactionDeleter.Candidate("4712", "7", "Beispielkonto",
+            LocalDate.of(2025, 1, 14), -42.0, "", "Beispiel GmbH", "Rechnung 4712", List.of());
+        check(TransactionDeleteConfirmation.text(List.of(noCurrency), 0).contains("-42,00 EUR"),
+            "EUR fallback for blank currency");
+    }
+
+    private static void confirmationTextHandlesMissingDate()
+    {
+        TransactionDeleter.Candidate undated = new TransactionDeleter.Candidate("4711", "7", "Beispielkonto",
+            null, -42.0, "EUR", "Beispiel GmbH", "Rechnung 4711", List.of());
+        String text = TransactionDeleteConfirmation.text(List.of(undated), 0);
+        check(text.contains("ohne Datum  -42,00 EUR"), "placeholder for missing date but was:\n" + text);
     }
 
     private static void confirmationTextShowsTransaction()
     {
         TransactionDeleter.Candidate candidate = new TransactionDeleter.Candidate("4711", "7", "Beispielkonto",
-            LocalDate.of(2025, 1, 14), -42.0, "Beispiel GmbH", "Rechnung 4711\nzweite Zeile",
+            LocalDate.of(2025, 1, 14), -42.0, "EUR", "Beispiel GmbH", "Rechnung 4711\nzweite Zeile",
             List.of("kategorie: Versicherung"));
         String text = TransactionDeleteConfirmation.text(List.of(candidate), 0);
         for (String expected : List.of("Ein MCP-Client möchte 1 Umsatz löschen:", "14.01.2025", "-42,00 EUR",
@@ -54,7 +78,7 @@ public final class TransactionDeleteConfirmationTests
     private static TransactionDeleter.Candidate candidate(int number)
     {
         return new TransactionDeleter.Candidate(Integer.toString(number), "7", "Beispielkonto",
-            LocalDate.of(2025, 1, 14), -1234.5, "Beispiel GmbH", "Rechnung " + number, List.of());
+            LocalDate.of(2025, 1, 14), -1234.5, "EUR", "Beispiel GmbH", "Rechnung " + number, List.of());
     }
 
     private static void check(boolean condition, String message)

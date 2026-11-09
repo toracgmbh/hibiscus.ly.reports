@@ -341,8 +341,10 @@ in der lokalen Hibiscus-Datenbank.
 
 Eingabe:
 
-- `ids`: Liste von Umsatz-IDs, mindestens eine. Die IDs stehen im Feld `id`
-  der Ergebnisse von `hibiscus_transactions_list`.
+- `ids`: Liste von Umsatz-IDs (Text oder Zahl), mindestens eine und höchstens
+  200 pro Aufruf. Die IDs stehen im Feld `id` der Ergebnisse von
+  `hibiscus_transactions_list`. Werte, die keine gültige Hibiscus-ID sind
+  (z. B. mit führenden Nullen), gelten als `unknown`.
 - `dryRun` (optional): Mit `true` wird nur geprüft und angezeigt, was gelöscht
   würde. Es erscheint kein Dialog und nichts wird verändert.
 
@@ -355,8 +357,12 @@ Eingabe:
 
 Ohne `dryRun` zeigt Hibiscus **einen** Dialog, der alle gefundenen Umsätze
 dieses Aufrufs auflistet. Nur **Löschen** löscht. Bei **Abbrechen**, mit der
-Escape-Taste, beim Schließen des Dialogs und nach 2 Minuten ohne Antwort wird
-nichts gelöscht. Es kann immer nur eine Bestätigung gleichzeitig offen sein:
+Escape-Taste, beim Schließen des Dialogs und nach 50 Sekunden ohne Antwort wird
+nichts gelöscht. Die 50 Sekunden liegen bewusst unter der üblichen
+Wartezeit von MCP-Clients (60 Sekunden), damit keine Löschung mehr passiert,
+nachdem der Client den Aufruf schon aufgegeben hat. Am besten vorher mit
+`dryRun` prüfen, dann ist der Dialog nur noch eine kurze Bestätigung. Beträge
+werden in der Währung des Kontos angezeigt. Es kann immer nur eine Bestätigung gleichzeitig offen sein:
 Ein zweiter Aufruf, während ein Dialog wartet, erhält `confirmError` und
 löscht nichts. Die Bestätigung gilt für den ganzen Aufruf. Schlägt das
 Löschen eines einzelnen Umsatzes fehl, steht bei diesem Umsatz in `results`

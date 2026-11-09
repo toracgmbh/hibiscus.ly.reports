@@ -14,8 +14,9 @@ public interface TransactionDeleter
 
     void delete(String id) throws Exception;
 
+    /** {@code date} may be null (Hibiscus allows transactions without a booking date). */
     record Candidate(String id, String accountId, String accountName, LocalDate date, double amount,
-                     String counterpartyName, String purpose, List<String> links)
+                     String currency, String counterpartyName, String purpose, List<String> links)
     {
     }
 }

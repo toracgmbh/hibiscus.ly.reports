@@ -74,6 +74,9 @@ public final class McpJsonRpcHandlerTests
             deleteLookupFailureOnlyAffectsThatId();
             deleteAcceptsNumericIds();
             rejectsNonBooleanDryRun();
+            rejectsNonScalarIds();
+            rejectsTooManyIds();
+            deleteHandlesCandidateWithoutDate();
             acceptsBooleanStringDryRun();
             messageLessConfirmFailureNamesExceptionClass();
         }
@@ -439,8 +442,56 @@ public final class McpJsonRpcHandlerTests
         for (JsonNode tool : tools)
             if ("hibiscus_transactions_delete".equals(tool.path("name").asText()))
                 description = tool.path("description").asText();
-        check(description.contains("Der Aufruf wartet bis zu 2 Minuten auf die Bestaetigung."),
-            "delete description mentions confirmation wait: " + description);
+        check(description.contains("Der Aufruf wartet bis zu "
+                + HibiscusTransactionDeleter.CONFIRM_TIMEOUT.toSeconds() + " Sekunden auf die Bestaetigung."),
+            "delete description mentions confirmation wait from the timeout constant: " + description);
+        checkEquals(50L, HibiscusTransactionDeleter.CONFIRM_TIMEOUT.toSeconds(),
+            "confirmation timeout stays below the usual 60 s client limit");
+    }
+
+    private static void rejectsNonScalarIds() throws Exception
+    {
+        FakeTransactionDeleter deleter = deleterWithExisting("7");
+        McpJsonRpcHandler handler = handler(new FakeTransactionProvider(), deleter, () -> true);
+        for (String arguments : List.of("{\"ids\":[{\"id\":\"7\"}]}", "{\"ids\":[[\"7\"]]}", "{\"ids\":[null]}"))
+        {
+            JsonNode response = callDelete(handler, arguments);
+            check(response.has("error"), "non-scalar id rejected: " + arguments);
+            check(response.path("error").path("data").asText().contains("nur Umsatz-IDs als Text oder Zahl"),
+                "non-scalar id message: " + arguments);
+        }
+        checkNoDeleterCalls(deleter);
+    }
+
+    private static void rejectsTooManyIds() throws Exception
+    {
+        FakeTransactionDeleter deleter = new FakeTransactionDeleter();
+        McpJsonRpcHandler handler = handler(new FakeTransactionProvider(), deleter, () -> true);
+        StringBuilder ids = new StringBuilder();
+        for (int i = 1; i <= 201; i++)
+            ids.append(i == 1 ? "" : ",").append('"').append(i).append('"');
+        JsonNode response = callDelete(handler, "{\"ids\":[" + ids + "]}");
+        check(response.has("error"), "more than 200 ids rejected");
+        check(response.path("error").path("data").asText().contains("hoechstens 200 Umsatz-IDs"),
+            "too many ids message");
+        checkNoDeleterCalls(deleter);
+
+        StringBuilder twoHundred = new StringBuilder();
+        for (int i = 1; i <= 200; i++)
+            twoHundred.append(i == 1 ? "" : ",").append('"').append(i).append('"');
+        check(!callDelete(handler, "{\"ids\":[" + twoHundred + "],\"dryRun\":true}").has("error"),
+            "exactly 200 ids accepted");
+    }
+
+    private static void deleteHandlesCandidateWithoutDate() throws Exception
+    {
+        FakeTransactionDeleter deleter = new FakeTransactionDeleter();
+        deleter.existing.put("1", new TransactionDeleter.Candidate("1", "7", "Beispielkonto", null, -42.0, "EUR",
+            "Beispiel GmbH", "Rechnung 4711", List.of()));
+        McpJsonRpcHandler handler = handler(new FakeTransactionProvider(), deleter, () -> true);
+        JsonNode entry = result(callDelete(handler, "{\"ids\":[\"1\"],\"dryRun\":true}")).path("results").get(0);
+        checkEquals("wouldDelete", entry.path("status").asText(), "undated transaction can be deleted");
+        check(entry.path("transaction").path("datum").isNull(), "undated transaction reports datum null");
     }
 
     private static void deleteToolFollowsSettingWithoutRestart() throws Exception
@@ -678,7 +729,7 @@ public final class McpJsonRpcHandlerTests
 
     private static TransactionDeleter.Candidate candidate(String id)
     {
-        return new TransactionDeleter.Candidate(id, "7", "Beispielkonto", LocalDate.of(2025, 1, 14), -42.0,
+        return new TransactionDeleter.Candidate(id, "7", "Beispielkonto", LocalDate.of(2025, 1, 14), -42.0, "EUR",
             "Beispiel GmbH", "Rechnung 4711", "1".equals(id) ? List.of("kategorie: Versicherung") : List.of());
     }
 

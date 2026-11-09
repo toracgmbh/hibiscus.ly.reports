@@ -23,8 +23,9 @@ final class TransactionDeleteConfirmation
             .append(candidates.size() == 1 ? " Umsatz" : " Umsätze").append(" löschen:\n\n");
         for (TransactionDeleter.Candidate candidate : candidates)
         {
-            text.append(DATE.format(candidate.date())).append("  ")
-                .append(amount.format(candidate.amount())).append(" EUR  ")
+            text.append(candidate.date() == null ? "ohne Datum" : DATE.format(candidate.date())).append("  ")
+                .append(amount.format(candidate.amount())).append(' ').append(currency(candidate.currency()))
+                .append("  ")
                 .append(nullToEmpty(candidate.counterpartyName())).append("  –  ")
                 .append(firstLine(candidate.purpose())).append("  (")
                 .append(nullToEmpty(candidate.accountName())).append(')');
@@ -47,6 +48,11 @@ final class TransactionDeleteConfirmation
             return "";
         int end = value.indexOf('\n');
         return (end < 0 ? value : value.substring(0, end)).stripTrailing();
+    }
+
+    private static String currency(String value)
+    {
+        return value == null || value.isBlank() ? "EUR" : value.trim();
     }
 
     private static String nullToEmpty(String value)
