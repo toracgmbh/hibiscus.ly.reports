@@ -548,9 +548,10 @@ SEPA kennt nur ein Verwendungszweck-Feld. `verwendungszweck2` und
 `weitereVerwendungszwecke` werden deshalb mit je einem Leerzeichen an
 `verwendungszweck` angehängt; Zeilenumbrüche und Tabulatoren innerhalb eines
 Teils werden zu einem Leerzeichen, normale Leerzeichen bleiben unverändert.
-Der zusammengeführte Verwendungszweck darf höchstens so lang sein, wie
-Hibiscus erlaubt (Standard 140 Zeichen), und nur Zeichen enthalten, die
-Hibiscus für SEPA zulässt (z.B. kein `€`, keine Emoji). Die Bestätigung und das
+`null`- und `undefined`-Einträge in `weitereVerwendungszwecke` entfallen. Der
+zusammengeführte Verwendungszweck darf höchstens so lang sein, wie Hibiscus
+erlaubt (Standard 140 Zeichen), und nur Zeichen enthalten, die Hibiscus für
+SEPA zulässt (z.B. kein `€`, keine Emoji). Die Bestätigung und das
 Testlauf-Log zeigen den zusammengeführten Zweck; ist er zu lang oder enthält
 er ein nicht erlaubtes Zeichen, bricht der Aufruf schon vor der Bestätigung
 mit einer Fehlermeldung ab.

@@ -1,6 +1,8 @@
 package de.open4me.hibiscus.reports.automation.runtime;
 
 import java.math.BigDecimal;
+import java.math.MathContext;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -134,25 +136,99 @@ public final class AutomationPayments
         return LocalDate.parse(value.toString());
     }
 
+    /** Liste von Texten; {@code null}- und {@code undefined}-Eintraege entfallen. */
     private static List<String> list(Object value)
     {
-        if (value == null)
+        if (missing(value))
             return List.of();
-        if (value instanceof List<?> items)
-            return items.stream().map(String::valueOf).toList();
+        Iterable<?> items;
         if (value instanceof ScriptObjectMirror mirror && mirror.isArray())
+            items = mirror.values();
+        else if (value instanceof List<?> list)
+            items = list;
+        else
+            items = List.of(value);
+        List<String> result = new ArrayList<>();
+        for (Object item : items)
         {
-            List<String> result = new ArrayList<>();
-            for (Object item : mirror.values())
-                result.add(String.valueOf(item));
-            return result;
+            if (!missing(item))
+                result.add(text(item));
         }
-        return List.of(String.valueOf(value));
+        return result;
     }
 
+    /** Text wie in JavaScript: {@code null}/{@code undefined} werden leer, 4711.0 wird "4711". */
     private static String text(Object value)
     {
-        return value == null ? "" : value.toString();
+        if (missing(value))
+            return "";
+        if (value instanceof Double || value instanceof Float)
+            return javaScriptNumber(((Number) value).doubleValue());
+        return value.toString();
+    }
+
+    /**
+     * Zahl wie JavaScripts {@code String(x)} (ECMAScript Number::toString): ohne Exponent fuer 1e-6 <= |x| < 1e21,
+     * sonst mit ({@code 1e+21}, {@code 1.5e-7}). Die Ziffern sind die kuerzesten, die wieder genau diese Zahl
+     * ergeben ({@link #shortestDigits(double)}).
+     */
+    static String javaScriptNumber(double number)
+    {
+        if (Double.isNaN(number))
+            return "NaN";
+        if (Double.isInfinite(number))
+            return number > 0 ? "Infinity" : "-Infinity";
+        if (number == 0)
+            return "0";
+        if (number < 0)
+            return "-" + javaScriptNumber(-number);
+        BigDecimal decimal = shortestDigits(number);
+        String digits = decimal.unscaledValue().toString();
+        int k = digits.length();
+        int n = k - decimal.scale();
+        if (k <= n && n <= 21)
+            return digits + "0".repeat(n - k);
+        if (0 < n && n <= 21)
+            return digits.substring(0, n) + "." + digits.substring(n);
+        if (-6 < n && n <= 0)
+            return "0." + "0".repeat(-n) + digits;
+        int exponent = n - 1;
+        String suffix = "e" + (exponent < 0 ? "-" : "+") + Math.abs(exponent);
+        return k == 1 ? digits + suffix : digits.charAt(0) + "." + digits.substring(1) + suffix;
+    }
+
+    /**
+     * Kuerzeste Dezimalzahl, die beim Einlesen wieder {@code number} ergibt; bei gleich vielen Stellen die naechste,
+     * wie ECMAScript es verlangt. {@link Double#toString(double)} liefert das erst ab JDK 19 (vorher z.B.
+     * "4.9E-324" statt 5e-324).
+     */
+    private static BigDecimal shortestDigits(double number)
+    {
+        BigDecimal exact = new BigDecimal(number);
+        for (int precision = 1; precision <= 17; precision++)
+        {
+            BigDecimal below = exact.round(new MathContext(precision, RoundingMode.FLOOR));
+            BigDecimal above = exact.round(new MathContext(precision, RoundingMode.CEILING));
+            boolean belowFits = below.doubleValue() == number;
+            boolean aboveFits = above.doubleValue() == number;
+            if (belowFits && aboveFits)
+            {
+                int compare = exact.subtract(below).compareTo(above.subtract(exact));
+                if (compare == 0)
+                    return exact.round(new MathContext(precision, RoundingMode.HALF_EVEN)).stripTrailingZeros();
+                return (compare < 0 ? below : above).stripTrailingZeros();
+            }
+            if (belowFits)
+                return below.stripTrailingZeros();
+            if (aboveFits)
+                return above.stripTrailingZeros();
+        }
+        return exact.round(new MathContext(17, RoundingMode.HALF_EVEN)).stripTrailingZeros();
+    }
+
+    private static boolean missing(Object value)
+    {
+        return value == null || ScriptObjectMirror.isUndefined(value);
     }
 
     private static String dialogText(Map<String, Object> map)
