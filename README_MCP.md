@@ -26,6 +26,10 @@ Aktivierung:
 - **MCP-Server aktivieren** einschalten.
 - Optional **Überweisungen anlegen** einschalten, wenn lokale
   SEPA-Überweisungsentwürfe per MCP angelegt werden sollen.
+- Optional **Umsätze löschen** einschalten (standardmäßig aus). Die Option
+  blendet das Tool `hibiscus_transactions_delete` ein; jede Löschung muss in
+  Hibiscus bestätigt werden. Nach dem Umschalten müssen sich Clients neu
+  verbinden.
 - Optional **Zugriff aus lokalem Netzwerk erlauben** einschalten.
 - Port prüfen oder anpassen.
 - Den angezeigten Endpoint und das gemeinsame Passwort als Bearer-Token in den
@@ -183,7 +187,9 @@ Verbindungsaufbau im Dialog angezeigt.
 erreichbar. Die öffentliche URL ist kein Zugriffsschutz. Wer das gemeinsame
 Passwort oder einen gültigen OAuth-Zugriffstoken besitzt, kann Hibiscus-Daten
 abrufen. Wenn **Überweisungen anlegen** aktiviert ist, können berechtigte
-Clients auch lokale Überweisungsentwürfe erstellen. 
+Clients auch lokale Überweisungsentwürfe erstellen. Ist **Umsätze löschen**
+aktiviert, können berechtigte Clients Löschungen anfragen, die in Hibiscus
+bestätigt werden müssen.
 
 Zum Beenden der globalen Freigabe das ngrok Authtoken
 im Dialog entfernen und **Übernehmen** wählen. Der lokale MCP-Server funktioniert
@@ -224,6 +230,7 @@ Der MCP-Server kann folgendermaßen hinzugefügt werden:
 | `hibiscus_categories_list` | Umsatzkategorien auflisten |
 | `hibiscus_transactions_list` | Umsätze mit Zeitraum, Konto und Limit laden |
 | `hibiscus_sepa_transfer_create` | Lokalen SEPA-Überweisungsentwurf anlegen |
+| `hibiscus_transactions_delete` | Umsätze lokal löschen (nur wenn aktiviert) |
 
 Objekte, die andere Plugins per `hibiscus.ly.reports.template.context`
 bereitstellen, sind im MCP-Kontext ebenfalls verfügbar.
@@ -317,6 +324,69 @@ Unterstützte Filter:
 - `limit`
 
 `from` und `to` verwenden das Format `YYYY-MM-DD`.
+
+Jeder Umsatz enthält `id`, die Hibiscus-Umsatz-ID, die
+`hibiscus_transactions_delete` entgegennimmt (falls aktiviert).
+
+## Umsätze löschen
+
+`hibiscus_transactions_delete` löscht Umsätze lokal aus Hibiscus. Das Tool
+erscheint nur, wenn im MCP-Dialog **Umsätze löschen** aktiviert wurde; die
+Option ist standardmäßig aus. Bei einer Änderung der Option müssen sich Clients
+neu verbinden. Ist die Option aus, wird ein Aufruf mit einer Fehlermeldung
+abgelehnt.
+
+Am Konto bei der Bank ändert sich dadurch nichts: Gelöscht wird nur der Eintrag
+in der lokalen Hibiscus-Datenbank.
+
+Eingabe:
+
+- `ids`: Liste von Umsatz-IDs, mindestens eine. Die IDs stehen im Feld `id`
+  der Ergebnisse von `hibiscus_transactions_list`.
+- `dryRun` (optional): Mit `true` wird nur geprüft und angezeigt, was gelöscht
+  würde. Es erscheint kein Dialog und nichts wird verändert.
+
+```json
+{
+  "ids": ["4711", "4712"],
+  "dryRun": true
+}
+```
+
+Ohne `dryRun` zeigt Hibiscus **einen** Dialog, der alle gefundenen Umsätze
+dieses Aufrufs auflistet. Nur **Löschen** löscht. Bei **Abbrechen**, mit der
+Escape-Taste, beim Schließen des Dialogs und nach 2 Minuten ohne Antwort wird
+nichts gelöscht. Es kann immer nur eine Bestätigung gleichzeitig offen sein:
+Ein zweiter Aufruf, während ein Dialog wartet, erhält `confirmError` und
+löscht nichts. Die Bestätigung gilt für den ganzen Aufruf. Schlägt das
+Löschen eines einzelnen Umsatzes fehl, steht bei diesem Umsatz in `results`
+der Status `error`; bereits gelöschte Umsätze bleiben gelöscht.
+
+Ist niemand am Rechner, der den Dialog bestätigen kann, zum Beispiel bei einem
+Zugriff aus der Ferne über ngrok, wird nichts gelöscht. Dasselbe gilt für
+Hibiscus ohne Oberfläche (Server-Modus), weil dort keine Bestätigung möglich
+ist.
+
+Die Antwort enthält je ID einen Eintrag in `results` mit dem Status:
+
+| Status | Bedeutung |
+| --- | --- |
+| `wouldDelete` | Nur bei `dryRun`: Der Umsatz wurde gefunden und würde gelöscht. |
+| `deleted` | Der Umsatz wurde bestätigt und gelöscht. |
+| `unknown` | Die ID ist ungültig oder es gibt keinen Umsatz dazu. |
+| `notConfirmed` | Der Umsatz wurde gefunden, die Löschung aber nicht bestätigt. |
+| `error` | Beim Suchen oder Löschen ist ein Fehler aufgetreten; `message` nennt den Grund. |
+
+Zusätzlich liefert die Antwort `dryRun`, `counts` (Anzahl je Status) und, wenn
+eine Bestätigung angefragt wurde, `confirmed` (bei `dryRun` oder wenn zu keiner ID
+ein Umsatz gefunden wurde, fehlt das Feld). Konnte die Bestätigung nicht eingeholt werden,
+etwa weil Hibiscus ohne Oberfläche läuft, ist `confirmed` `false`,
+`confirmError` nennt den Grund und nichts wird gelöscht.
+
+Jeder gefundene Umsatz enthält die Felder `transaction` und `links`. `links`
+nennt, was mit dem Umsatz verknüpft ist und mit ihm verloren geht: eine
+zugeordnete Kategorie (`kategorie: <Name>`), einen Kommentar (`kommentar`) und
+die Markierung als geprüft (`geprueft`).
 
 ## Kategorien laden
 
