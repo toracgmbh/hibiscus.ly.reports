@@ -145,7 +145,10 @@ public final class McpJsonRpcHandler
         }
         catch (Exception e)
         {
-            return error(id, -32603, "Internal error", e.getMessage());
+            String detail = e.getMessage();
+            // Viele MCP-Clients zeigen nur "message" an; "data" bleibt fuer den Detailtext erhalten.
+            return error(id, -32603, detail == null || detail.isBlank() ? "Internal error"
+                : "Internal error: " + detail, detail);
         }
     }
 

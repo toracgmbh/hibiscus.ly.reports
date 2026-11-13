@@ -58,6 +58,7 @@ public final class McpJsonRpcHandlerTests
             passesTransferPurposesThroughUnchanged();
             rejectsAdditionalPurposesThatAreNotAList();
             returnsStoredPurpose();
+            showsTooLongPurposeInErrorMessage();
         }
         catch (Exception e)
         {
@@ -338,6 +339,8 @@ public final class McpJsonRpcHandlerTests
             """));
         check(response.has("error"), "invalid transfer rejected");
         check(response.path("error").path("data").asText().contains("Betrag"), "invalid amount message");
+        check(response.path("error").path("message").asText().contains("Betrag"),
+            "error detail also in message for clients that hide data");
     }
 
     private static void rejectsTransferDraftWithFriendlyRequiredFieldMessage() throws Exception
@@ -454,6 +457,28 @@ public final class McpJsonRpcHandlerTests
         checkEquals("Rechnung 4711 vom 01.01.2026 Auftrag 123456",
             response.path("result").path("structuredContent").path("purpose").asText(),
             "response shows the stored purpose");
+    }
+
+    private static void showsTooLongPurposeInErrorMessage() throws Exception
+    {
+        McpJsonRpcHandler handler = handler(new FakeTransactionProvider(), new FakeTransferDraftWriter(), true);
+        JsonNode response = MAPPER.readTree(handler.handle("""
+            {"jsonrpc":"2.0","id":15,"method":"tools/call","params":{
+              "name":"hibiscus_sepa_transfer_create",
+              "arguments":{
+                "accountId":"active",
+                "recipientName":"Max Mustermann",
+                "recipientIban":"DE02120300000000202051",
+                "amount":1,
+                "purpose":"%s",
+                "purpose2":"%s"
+              }
+            }}
+            """.formatted("x".repeat(100), "y".repeat(50))));
+        check(response.has("error"), "too long purpose rejected");
+        check(response.path("error").path("message").asText().contains("151 Zeichen"),
+            "length message visible in error.message: " + response.path("error").path("message").asText());
+        check(response.path("error").path("data").asText().contains("151 Zeichen"), "length message in data");
     }
 
     private static void withProviderExtension(ThrowingRunnable runnable) throws Exception
