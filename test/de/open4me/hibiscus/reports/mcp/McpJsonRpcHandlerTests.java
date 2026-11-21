@@ -1,6 +1,7 @@
 package de.open4me.hibiscus.reports.mcp;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -439,6 +440,8 @@ public final class McpJsonRpcHandlerTests
         check(names.contains("hibiscus_transactions_delete"), "delete tool listed");
         JsonNode props = schemaProperties(tools, "hibiscus_transactions_delete");
         checkEquals("array", props.path("ids").path("type").asText(), "delete ids type");
+        checkEquals(McpJsonRpcHandler.MAX_DELETE_IDS, props.path("ids").path("maxItems").asInt(),
+            "delete ids maxItems matches the enforced limit");
         checkEquals("boolean", props.path("dryRun").path("type").asText(), "delete dryRun type");
         String description = "";
         for (JsonNode tool : tools)
@@ -557,6 +560,7 @@ public final class McpJsonRpcHandlerTests
         checkEquals("kategorie: Versicherung", results.get(0).path("links").get(0).asText(), "dry run link");
         checkEquals("Beispiel GmbH", results.get(0).path("transaction").path("gegenkontoName").asText(),
             "dry run counterparty");
+        checkEquals("EUR", results.get(0).path("transaction").path("waehrung").asText(), "dry run currency");
     }
 
     private static void deletesConfirmedTransactionsPerId() throws Exception
@@ -578,6 +582,9 @@ public final class McpJsonRpcHandlerTests
         checkEquals(1, deleter.confirmCalls.size(), "confirm called once");
         checkEquals(2, deleter.confirmCalls.get(0).size(), "confirm candidates");
         checkEquals(Integer.valueOf(1), deleter.unknownCounts.get(0), "confirm unknown count");
+        Instant requestStart = deleter.requestStarts.get(0);
+        check(requestStart != null && !requestStart.isAfter(Instant.now()),
+            "confirm gets the start of the request, so the dialog timeout includes the lookup time");
         checkEquals(List.of("1"), deleter.deleted, "deleted ids");
         checkEquals(1, deleter.refreshCalls, "open views refreshed once after deleting");
         check(result.path("confirmed").isBoolean() && result.path("confirmed").asBoolean(), "confirmed true");
@@ -672,6 +679,8 @@ public final class McpJsonRpcHandlerTests
         checkEquals("error", results.get(0).path("status").asText(), "lookup failure status");
         check(results.get(0).path("message").asText().contains("Suche fehlgeschlagen"), "lookup failure message");
         checkEquals("deleted", results.get(1).path("status").asText(), "other id still deleted");
+        checkEquals(Integer.valueOf(1), deleter.unknownCounts.get(0),
+            "dialog counts the failed lookup among the skipped ids");
     }
 
     private static void deleteAcceptsNumericIds() throws Exception
@@ -999,6 +1008,7 @@ public final class McpJsonRpcHandlerTests
         private final List<String> lookups = new ArrayList<>();
         private final List<List<Candidate>> confirmCalls = new ArrayList<>();
         private final List<Integer> unknownCounts = new ArrayList<>();
+        private final List<Instant> requestStarts = new ArrayList<>();
         private final List<String> deleted = new ArrayList<>();
         private int refreshCalls;
         private boolean failingRefresh;
@@ -1013,10 +1023,11 @@ public final class McpJsonRpcHandlerTests
         }
 
         @Override
-        public boolean confirm(List<Candidate> candidates, int unknownCount)
+        public boolean confirm(List<Candidate> candidates, int skippedCount, Instant requestStart)
         {
             confirmCalls.add(List.copyOf(candidates));
-            unknownCounts.add(unknownCount);
+            unknownCounts.add(skippedCount);
+            requestStarts.add(requestStart);
             if (answer == null)
                 throw silentFailure ? new IllegalStateException() : new IllegalStateException("kein GUI");
             return answer;

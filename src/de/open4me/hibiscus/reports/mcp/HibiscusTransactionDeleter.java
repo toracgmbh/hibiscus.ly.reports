@@ -2,6 +2,7 @@ package de.open4me.hibiscus.reports.mcp;
 
 import java.rmi.RemoteException;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -25,6 +26,9 @@ public final class HibiscusTransactionDeleter implements TransactionDeleter
 {
     /** Stays below the 60 s request timeout common MCP clients use, so a late click cannot delete unseen. */
     static final Duration CONFIRM_TIMEOUT = Duration.ofSeconds(50);
+
+    /** Below this, no dialog is opened: the user could not read it before the client gives up. */
+    static final Duration MIN_CONFIRM_TIME = Duration.ofSeconds(10);
 
     private static final Set<String> TRANSACTION_LIST_VIEWS = Set.of(
         "de.willuhn.jameica.hbci.gui.views.KontoauszugList",
@@ -63,16 +67,29 @@ public final class HibiscusTransactionDeleter implements TransactionDeleter
     }
 
     @Override
-    public boolean confirm(List<Candidate> candidates, int unknownCount) throws Exception
+    public boolean confirm(List<Candidate> candidates, int skippedCount, Instant requestStart) throws Exception
     {
-        return McpTransactionDeleteDialog.confirm(
-            TransactionDeleteConfirmation.text(candidates, unknownCount), CONFIRM_TIMEOUT);
+        return McpTransactionDeleteDialog.confirm(TransactionDeleteConfirmation.text(candidates, skippedCount),
+            () -> remainingConfirmTime(requestStart, Instant.now()));
+    }
+
+    /**
+     * Time left for the dialog. CONFIRM_TIMEOUT counts from the start of the MCP request, so the lookup and a busy
+     * UI thread are included and the dialog never outlives the client's request timeout.
+     */
+    static Duration remainingConfirmTime(Instant requestStart, Instant now)
+    {
+        return CONFIRM_TIMEOUT.minus(Duration.between(requestStart, now));
     }
 
     @Override
     public void delete(String id) throws Exception
     {
         Umsatz transaction = Settings.getDBService().createObject(Umsatz.class, id);
+        // Hibiscus' delete() formats the booking date for the account log and fails on null with an exception it
+        // does not roll back, leaving the database transaction open. Refuse before touching anything.
+        if (transaction.getDatum() == null)
+            throw new IllegalStateException("Hibiscus kann Umsätze ohne Buchungsdatum nicht löschen.");
         String transactionId = transaction.getID();
         transaction.delete();
         // Same notification Hibiscus' own delete sends (for consumers such as counters). Open tables do not react

@@ -57,10 +57,11 @@ public final class TransactionDeleteConfirmationTests
     private static void confirmationTextMentionsUnknownIds()
     {
         List<TransactionDeleter.Candidate> candidates = List.of(candidate(1));
-        check(TransactionDeleteConfirmation.text(candidates, 2).contains("2 unbekannte ID(s)"),
-            "unknown ids mentioned");
-        check(!TransactionDeleteConfirmation.text(candidates, 0).contains("unbekannte"),
-            "no unknown line without unknown ids");
+        String text = TransactionDeleteConfirmation.text(candidates, 2);
+        check(text.contains("2 ID(s) werden übersprungen (unbekannt oder nicht lesbar)."),
+            "skipped ids mentioned: " + text);
+        check(!TransactionDeleteConfirmation.text(candidates, 0).contains("übersprungen"),
+            "no skipped line without skipped ids");
     }
 
     private static void confirmationTextListsEveryTransaction()

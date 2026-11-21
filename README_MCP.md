@@ -358,9 +358,13 @@ Eingabe:
 Ohne `dryRun` zeigt Hibiscus **einen** Dialog, der alle gefundenen Umsätze
 dieses Aufrufs auflistet. Nur **Löschen** löscht. Bei **Abbrechen**, mit der
 Escape-Taste, beim Schließen des Dialogs und nach 50 Sekunden ohne Antwort wird
-nichts gelöscht. Die 50 Sekunden liegen bewusst unter der üblichen
-Wartezeit von MCP-Clients (60 Sekunden), damit keine Löschung mehr passiert,
-nachdem der Client den Aufruf schon aufgegeben hat. Am besten vorher mit
+nichts gelöscht. Die 50 Sekunden zählen ab dem Eingang des Aufrufs und liegen
+bewusst unter der üblichen Wartezeit von MCP-Clients (60 Sekunden), damit keine
+Löschung mehr passiert, nachdem der Client den Aufruf schon aufgegeben hat. Bleiben
+dafür weniger als 10 Sekunden, erscheint kein Dialog (`confirmError`). IDs, die
+unbekannt sind oder nicht gelesen werden konnten, nennt der Dialog als übersprungen.
+Umsätze ohne Buchungsdatum kann Hibiscus nicht löschen; sie erhalten den Status
+`error`. Am besten vorher mit
 `dryRun` prüfen, dann ist der Dialog nur noch eine kurze Bestätigung. Beträge
 werden in der Währung des Kontos angezeigt. Es kann immer nur eine Bestätigung gleichzeitig offen sein:
 Ein zweiter Aufruf, während ein Dialog wartet, erhält `confirmError` und
@@ -395,7 +399,8 @@ ein Umsatz gefunden wurde, fehlt das Feld). Konnte die Bestätigung nicht eingeh
 etwa weil Hibiscus ohne Oberfläche läuft, ist `confirmed` `false`,
 `confirmError` nennt den Grund und nichts wird gelöscht.
 
-Jeder gefundene Umsatz enthält die Felder `transaction` und `links`. `links`
+Jeder gefundene Umsatz enthält die Felder `transaction` (Konto, Datum, Betrag mit
+`waehrung` des Kontos, Gegenkonto, Verwendungszweck) und `links`. `links`
 nennt, was mit dem Umsatz verknüpft ist und mit ihm verloren geht: eine
 zugeordnete Kategorie (`kategorie: <Name>`), einen Kommentar (`kommentar`) und
 die Markierung als geprüft (`geprueft`).

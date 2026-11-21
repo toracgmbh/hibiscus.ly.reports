@@ -3,6 +3,7 @@ package de.open4me.hibiscus.reports.mcp;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.layout.GridData;
@@ -21,7 +22,8 @@ import de.willuhn.jameica.system.OperationCanceledException;
 
 /**
  * Asks the user in Hibiscus whether the transactions listed by an MCP client may be deleted. Only the
- * explicit "Löschen" button confirms; cancel, window close, Escape and timeout all answer no.
+ * explicit "Löschen" button confirms; cancel, window close, Escape (Jameica's default onEscape throws
+ * OperationCanceledException) and timeout all answer no.
  */
 final class McpTransactionDeleteDialog extends AbstractDialog<Boolean>
 {
@@ -47,7 +49,7 @@ final class McpTransactionDeleteDialog extends AbstractDialog<Boolean>
      *
      * @return true only if the user pressed "Löschen"
      */
-    static boolean confirm(String text, Duration timeout) throws Exception
+    static boolean confirm(String text, Supplier<Duration> remainingTime) throws Exception
     {
         if (Application.inServerMode())
             throw new IllegalStateException("Hibiscus läuft ohne Oberfläche; Löschen kann nicht bestätigt werden.");
@@ -56,7 +58,7 @@ final class McpTransactionDeleteDialog extends AbstractDialog<Boolean>
             throw new IllegalStateException("Es wartet bereits eine Löschbestätigung in Hibiscus.");
         try
         {
-            return show(text, timeout);
+            return show(text, remainingTime);
         }
         finally
         {
@@ -64,7 +66,7 @@ final class McpTransactionDeleteDialog extends AbstractDialog<Boolean>
         }
     }
 
-    private static boolean show(String text, Duration timeout) throws Exception
+    private static boolean show(String text, Supplier<Duration> remainingTime) throws Exception
     {
         Display display = GUI.getDisplay();
         AtomicReference<Boolean> answer = new AtomicReference<>(Boolean.FALSE);
@@ -72,6 +74,14 @@ final class McpTransactionDeleteDialog extends AbstractDialog<Boolean>
         // AbstractDialog.open() runs its nested event loop on the UI thread and blocks the caller until the
         // dialog is closed. We enter the UI thread ourselves so that timerExec is registered there too.
         display.syncExec(() -> {
+            // Measured here, after any wait for the UI thread, so the dialog closes before the client gives up.
+            Duration timeout = remainingTime.get();
+            if (timeout.compareTo(HibiscusTransactionDeleter.MIN_CONFIRM_TIME) < 0)
+            {
+                failure.set(new IllegalStateException(
+                    "Zu wenig Zeit für die Bestätigung in Hibiscus; bitte erneut aufrufen."));
+                return;
+            }
             McpTransactionDeleteDialog dialog = new McpTransactionDeleteDialog(text);
             Runnable timeoutTask = dialog::close;
             display.timerExec((int) Math.min(Integer.MAX_VALUE, timeout.toMillis()), timeoutTask);
@@ -130,12 +140,6 @@ final class McpTransactionDeleteDialog extends AbstractDialog<Boolean>
             }
         }, null, true, "process-stop.png");
         container.addButtonArea(buttons);
-    }
-
-    @Override
-    protected void onEscape()
-    {
-        throw new OperationCanceledException("Löschen abgebrochen");
     }
 
     @Override

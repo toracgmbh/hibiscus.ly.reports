@@ -1,5 +1,6 @@
 package de.open4me.hibiscus.reports.mcp;
 
+import java.time.Instant;
 import java.util.List;
 
 public final class HibiscusTransactionDeleterTests
@@ -12,6 +13,18 @@ public final class HibiscusTransactionDeleterTests
     {
         acceptsOnlyCanonicalTransactionIds();
         reloadsOnlyReadOnlyTransactionListViews();
+        confirmTimeCountsFromRequestStart();
+    }
+
+    private static void confirmTimeCountsFromRequestStart()
+    {
+        Instant start = Instant.parse("2026-01-01T10:00:00Z");
+        check(HibiscusTransactionDeleter.remainingConfirmTime(start, start.plusSeconds(3))
+                .equals(HibiscusTransactionDeleter.CONFIRM_TIMEOUT.minusSeconds(3)),
+            "time spent before the dialog is subtracted from the timeout");
+        check(HibiscusTransactionDeleter.remainingConfirmTime(start, start.plusSeconds(45))
+                .compareTo(HibiscusTransactionDeleter.MIN_CONFIRM_TIME) < 0,
+            "a late dialog would have less than the minimum time left");
     }
 
     private static void reloadsOnlyReadOnlyTransactionListViews()

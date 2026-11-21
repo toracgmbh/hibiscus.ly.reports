@@ -4,6 +4,7 @@ import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -486,6 +487,7 @@ public final class McpJsonRpcHandler
 
     private ObjectNode deleteTransactions(JsonNode arguments)
     {
+        Instant requestStart = Instant.now();
         if (!deleteEnabled.getAsBoolean())
             throw new IllegalStateException("Umsaetze loeschen ist deaktiviert.");
         JsonNode idsNode = arguments.path("ids");
@@ -529,7 +531,8 @@ public final class McpJsonRpcHandler
         if (dryRun)
             candidates.keySet().forEach(id -> entries.get(id).put("status", "wouldDelete"));
         else if (!candidates.isEmpty())
-            confirmAndDelete(result, entries, candidates, countStatus(entries, "unknown"));
+            confirmAndDelete(result, entries, candidates,
+                countStatus(entries, "unknown") + countStatus(entries, "error"), requestStart);
 
         ArrayNode results = result.putArray("results");
         entries.values().forEach(results::add);
@@ -540,12 +543,13 @@ public final class McpJsonRpcHandler
     }
 
     private void confirmAndDelete(ObjectNode result, Map<String, ObjectNode> entries,
-                                  Map<String, TransactionDeleter.Candidate> candidates, int unknownCount)
+                                  Map<String, TransactionDeleter.Candidate> candidates, int skippedCount,
+                                  Instant requestStart)
     {
         boolean confirmed;
         try
         {
-            confirmed = transactionDeleter.confirm(List.copyOf(candidates.values()), unknownCount);
+            confirmed = transactionDeleter.confirm(List.copyOf(candidates.values()), skippedCount, requestStart);
         }
         catch (Exception e)
         {
@@ -601,6 +605,8 @@ public final class McpJsonRpcHandler
             transaction.put("kontoName", candidate.accountName());
             transaction.put("datum", candidate.date() == null ? null : candidate.date().toString());
             transaction.put("betrag", candidate.amount());
+            transaction.put("waehrung", candidate.currency() == null || candidate.currency().isBlank()
+                ? "EUR" : candidate.currency().trim());
             transaction.put("gegenkontoName", candidate.counterpartyName());
             transaction.put("zweck", candidate.purpose());
             ArrayNode links = entry.putArray("links");
@@ -974,6 +980,7 @@ public final class McpJsonRpcHandler
         ObjectNode ids = arrayProperty(props, "ids", "Umsatz-IDs",
             "IDs aus hibiscus_transactions_list (Feld id).");
         ids.put("minItems", 1);
+        ids.put("maxItems", MAX_DELETE_IDS);
         property(props, "dryRun", "boolean", "Probelauf",
             "Wenn true, wird nur aufgelistet, was geloescht wuerde. Kein Dialog, keine Aenderung.");
         schema.putArray("required").add("ids");

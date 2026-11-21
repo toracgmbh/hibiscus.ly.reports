@@ -1,5 +1,10 @@
 # MCP Transactions Delete Implementation Plan
 
+> **Superseded in parts (after review):** the confirmation timeout is 50 seconds, counted from the start of the
+> MCP request (not 2 minutes), and open transaction lists are reloaded after a deletion. The spec
+> (`docs/superpowers/specs/2026-11-09-mcp-transactions-delete-design.md`) and the code are authoritative; this plan
+> records the original implementation steps.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Expose transaction IDs over MCP and add an opt-in, Hibiscus-confirmed `hibiscus_transactions_delete` tool.

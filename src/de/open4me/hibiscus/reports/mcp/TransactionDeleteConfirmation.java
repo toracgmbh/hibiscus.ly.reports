@@ -15,7 +15,8 @@ final class TransactionDeleteConfirmation
     {
     }
 
-    static String text(List<TransactionDeleter.Candidate> candidates, int unknownCount)
+    /** @param skippedCount IDs of the call that are not listed: unknown, or their lookup failed */
+    static String text(List<TransactionDeleter.Candidate> candidates, int skippedCount)
     {
         DecimalFormat amount = new DecimalFormat("#,##0.00", DecimalFormatSymbols.getInstance(Locale.GERMANY));
         StringBuilder text = new StringBuilder();
@@ -35,8 +36,8 @@ final class TransactionDeleteConfirmation
             text.append('\n');
         }
         text.append('\n');
-        if (unknownCount > 0)
-            text.append(unknownCount).append(" unbekannte ID(s) werden übersprungen.\n\n");
+        if (skippedCount > 0)
+            text.append(skippedCount).append(" ID(s) werden übersprungen (unbekannt oder nicht lesbar).\n\n");
         text.append("Die Umsätze werden nur lokal in Hibiscus gelöscht, bei der Bank ändert sich nichts. "
             + "Das Löschen kann nicht rückgängig gemacht werden.");
         return text.toString();
