@@ -5,7 +5,11 @@
 source "$(dirname "$0")/../env.sh"
 source "$(dirname "$0")/iso-env.sh"
 MODE="${1:-server}"
+: "${JAMEICA_CWD:?JAMEICA_CWD setzen (Startverzeichnis von Jameica)}"
 [ -d "$RUN_DIR/work" ] || { echo "Erst build.sh ausfuehren." >&2; exit 1; }
+iso_running && { echo "Die Test-Instanz laeuft bereits." >&2; exit 1; }
+# Alte Logs entfernen, damit wait.sh nur Meldungen dieses Starts sieht.
+rm -f "$RUN_DIR"/jameica-*.log "$RUN_DIR/work/jameica.log"
 ARGS=(-Duser.home="$RUN_DIR/home" -cp "$JAMEICA_CP")
 if [ "$MODE" = "server" ]; then
   MAIN_ARGS=(-d -n -f "$RUN_DIR/work" -p "$ISO_MASTER_PW")

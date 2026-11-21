@@ -6,7 +6,8 @@ set -e
 source "$(dirname "$0")/../env.sh"
 source "$(dirname "$0")/iso-env.sh"
 
-if pgrep -f "$ISO_MASTER_PW" > /dev/null; then
+require_hibiscus
+if iso_running; then
   echo "Die Test-Instanz laeuft noch; erst beenden." >&2; exit 1
 fi
 

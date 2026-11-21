@@ -2,10 +2,12 @@
 # Prueft hibiscus_transactions_delete gegen die Test-Instanz im Server-Modus (start.sh server, frisch gebaut).
 # Gibt PASS/FAIL je Pruefung aus. Im Server-Modus verweigert der Bestaetigungsdialog, daher wird nichts
 # geloescht. NICHT gegen die GUI-Instanz laufen lassen: dort oeffnet der echte Loeschaufruf einen Dialog.
+# Beendet sich mit der Anzahl fehlgeschlagener Pruefungen.
 BASE="$(cd "$(dirname "$0")" && pwd)"
+source "$BASE/iso-env.sh"
+bash "$BASE/wait.sh" > /dev/null || exit 1
 call() { bash "$BASE/mcp.sh" "$1"; }
 tool() { call "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/call\",\"params\":{\"name\":\"$1\",\"arguments\":$2}}"; }
-ok() { if [ "$1" = "true" ]; then echo "PASS $2"; else echo "FAIL $2"; echo "     got: $3" | cut -c1-600; fi; }
 
 TOOLS=$(call '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
 ok "$(jq '[.result.tools[].name] | index("hibiscus_transactions_delete") != null' <<<"$TOOLS")" "delete tool listed while setting on" "$TOOLS"
@@ -48,3 +50,4 @@ ok "$(jq '.error.data | contains("dryRun: true oder false")' <<<"$BAD")" "dryRun
 MANY=$(jq -cn '[range(1;202) | tostring]')
 BAD=$(tool hibiscus_transactions_delete "{\"ids\":$MANY,\"dryRun\":true}")
 ok "$(jq '.error.data | contains("hoechstens 200")' <<<"$BAD")" "201 ids rejected" "$BAD"
+finish

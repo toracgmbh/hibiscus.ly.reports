@@ -29,21 +29,41 @@ public class TestDataPlugin extends AbstractPlugin
 
     private void createWhenReady()
     {
+        DBService db = waitForDatabase();
+        if (db == null)
+        {
+            Logger.error("TESTDATA: gave up, Hibiscus database not ready");
+            return;
+        }
+        // Retry only the wait for the database. A failure while creating means broken test data (for example a
+        // validation error); retrying would find the half-created accounts and report "already present".
+        try
+        {
+            DBIterator accounts = db.createList(Konto.class);
+            accounts.addFilter("kontonummer = ?", "0000202051");
+            if (accounts.hasNext())
+            {
+                Logger.info("TESTDATA: already present");
+                return;
+            }
+            create(db);
+            Logger.info("TESTDATA: created");
+        }
+        catch (Throwable t)
+        {
+            Logger.error("TESTDATA: gave up, creating test data failed", t);
+        }
+    }
+
+    private static DBService waitForDatabase()
+    {
         for (int attempt = 0; attempt < 120; attempt++)
         {
             try
             {
                 DBService db = Settings.getDBService();
-                DBIterator accounts = db.createList(Konto.class);
-                accounts.addFilter("kontonummer = ?", "0000202051");
-                if (accounts.hasNext())
-                {
-                    Logger.info("TESTDATA: already present");
-                    return;
-                }
-                create(db);
-                Logger.info("TESTDATA: created");
-                return;
+                db.createList(Konto.class).hasNext();
+                return db;
             }
             catch (Throwable t)
             {
@@ -54,15 +74,17 @@ public class TestDataPlugin extends AbstractPlugin
                 }
                 catch (InterruptedException e)
                 {
-                    return;
+                    return null;
                 }
             }
         }
-        Logger.error("TESTDATA: gave up");
+        return null;
     }
 
     private static void create(DBService db) throws Exception
     {
+        // Hibiscus checks bank code and account number on store(), so invented numbers are rejected. These are the
+        // widely published sample accounts/IBANs from IBAN documentation, not anyone's real account.
         Konto eur = account(db, "Testkonto EUR", "12030000", "0000202051", "DE02120300000000202051", "EUR");
         Konto chf = account(db, "Testkonto CHF", "50010517", "0137075030", "DE02500105170137075030", "CHF");
 

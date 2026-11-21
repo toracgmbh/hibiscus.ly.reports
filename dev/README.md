@@ -11,6 +11,7 @@ anzufassen. Alle Testdaten sind erfunden.
   `JAMEICA_CP` (Classpath) und `JAMEICA_CWD` (Startverzeichnis) setzen. Getestet ist nur das Nix-Layout.
 - `HIBISCUS_DIR`: ein installiertes Hibiscus-Plugin (Ordner mit `hibiscus.jar` und `lib/`).
   Es wird nur gelesen; die Test-Instanz arbeitet mit einer Kopie.
+- Pfade mit Leerzeichen werden nicht unterstuetzt.
 
 ```bash
 export JAMEICA_DIR=/nix/store/...-jameica-2.12.0
@@ -25,7 +26,8 @@ dev/run-tests.sh de.open4me.hibiscus.reports.mcp.McpJsonRpcHandlerTests   # einz
 ```
 
 `run-tests.sh` uebersetzt `src/` und `test/` mit `javac --release 17` und ruft die statische
-Methode `run()` jeder genannten Klasse auf. `CoreTests` bricht derzeit in `DynamicReportTests` ab
+Methode `run()` jeder genannten Klasse auf. Der Classpath folgt `compile.path` aus `build/build.xml`:
+die Jars aus `lib/` zuerst, von Hibiscus nur `hibiscus.jar`, `swtchart` und `obantoo`. `CoreTests` bricht derzeit in `DynamicReportTests` ab
 (#6); einzelne Klassen laufen davon unabhaengig.
 
 ## Isolierte Jameica-Instanz
@@ -52,7 +54,8 @@ Die Instanz vor einem neuen `build.sh` beenden; `build.sh` loescht den alten Sta
 
 ### Pruefskripte fuer `hibiscus_transactions_delete`
 
-Setzen das Loeschwerkzeug aus #8 voraus.
+Setzen das Loeschwerkzeug aus #8 voraus. Sie warten zuerst auf die Instanz, geben PASS/FAIL je Pruefung
+aus und beenden sich mit der Anzahl der Fehlschlaege (0 = alles bestanden).
 
 | Skript | Instanz | Prueft |
 | --- | --- | --- |
