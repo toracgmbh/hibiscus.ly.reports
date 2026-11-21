@@ -7,8 +7,11 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import de.willuhn.datasource.rmi.ObjectNotFoundException;
+import de.willuhn.jameica.gui.AbstractView;
+import de.willuhn.jameica.gui.GUI;
 import de.willuhn.jameica.hbci.Settings;
 import de.willuhn.jameica.hbci.messaging.ObjectDeletedMessage;
 import de.willuhn.jameica.hbci.rmi.Konto;
@@ -22,6 +25,10 @@ public final class HibiscusTransactionDeleter implements TransactionDeleter
 {
     /** Stays below the 60 s request timeout common MCP clients use, so a late click cannot delete unseen. */
     static final Duration CONFIRM_TIMEOUT = Duration.ofSeconds(50);
+
+    private static final Set<String> TRANSACTION_LIST_VIEWS = Set.of(
+        "de.willuhn.jameica.hbci.gui.views.KontoauszugList",
+        "de.willuhn.jameica.hbci.gui.views.UmsatzTypTree");
 
     public HibiscusTransactionDeleter()
     {
@@ -68,8 +75,9 @@ public final class HibiscusTransactionDeleter implements TransactionDeleter
         Umsatz transaction = Settings.getDBService().createObject(Umsatz.class, id);
         String transactionId = transaction.getID();
         transaction.delete();
-        // Same notification Hibiscus' own delete sends, so open views refresh. The transaction is already
-        // gone at this point; a messaging problem must not turn the result into an error.
+        // Same notification Hibiscus' own delete sends (for consumers such as counters). Open tables do not react
+        // to it: they only drop rows whose own object instance was deleted, see refreshOpenViews(). The
+        // transaction is already gone at this point; a messaging problem must not turn the result into an error.
         try
         {
             Application.getMessagingFactory().sendMessage(new ObjectDeletedMessage(transaction, transactionId));
@@ -78,6 +86,36 @@ public final class HibiscusTransactionDeleter implements TransactionDeleter
         {
             Logger.warn("MCP: Löschmeldung für Umsatz " + transactionId + " konnte nicht gesendet werden: " + e);
         }
+    }
+
+    /**
+     * Reloads the current view if it is a read-only transaction list. Views with input fields (account details,
+     * transaction edit) are left alone because a reload would discard unsaved changes.
+     */
+    @Override
+    public void refreshOpenViews()
+    {
+        if (Application.inServerMode())
+            return;
+        GUI.getDisplay().asyncExec(() -> {
+            AbstractView view = GUI.getCurrentView();
+            if (view == null || !isTransactionListView(view.getClass().getName()))
+                return;
+            try
+            {
+                view.reload();
+            }
+            catch (Exception e)
+            {
+                Logger.warn("MCP: Umsatzliste konnte nach dem Löschen nicht neu geladen werden: " + e);
+            }
+        });
+    }
+
+    /** Hibiscus' "Umsätze" and "Umsätze nach Kategorien" views: lists without input fields. */
+    static boolean isTransactionListView(String viewClassName)
+    {
+        return viewClassName != null && TRANSACTION_LIST_VIEWS.contains(viewClassName);
     }
 
     private static List<String> links(Umsatz transaction) throws RemoteException

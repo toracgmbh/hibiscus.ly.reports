@@ -14,6 +14,9 @@ public interface TransactionDeleter
 
     void delete(String id) throws Exception;
 
+    /** Called once after a call deleted at least one transaction, so open lists stop showing deleted rows. */
+    void refreshOpenViews() throws Exception;
+
     /** {@code date} may be null (Hibiscus allows transactions without a booking date). */
     record Candidate(String id, String accountId, String accountName, LocalDate date, double amount,
                      String currency, String counterpartyName, String purpose, List<String> links)

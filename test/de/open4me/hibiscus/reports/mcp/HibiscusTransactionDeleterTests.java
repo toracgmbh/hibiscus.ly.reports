@@ -11,6 +11,21 @@ public final class HibiscusTransactionDeleterTests
     public static void run()
     {
         acceptsOnlyCanonicalTransactionIds();
+        reloadsOnlyReadOnlyTransactionListViews();
+    }
+
+    private static void reloadsOnlyReadOnlyTransactionListViews()
+    {
+        check(HibiscusTransactionDeleter.isTransactionListView("de.willuhn.jameica.hbci.gui.views.KontoauszugList"),
+            "Umsaetze view is reloaded");
+        check(HibiscusTransactionDeleter.isTransactionListView("de.willuhn.jameica.hbci.gui.views.UmsatzTypTree"),
+            "Umsaetze nach Kategorien view is reloaded");
+        // Views with input fields would lose unsaved edits on reload.
+        for (String other : List.of("de.willuhn.jameica.hbci.gui.views.KontoNew",
+            "de.willuhn.jameica.hbci.gui.views.UmsatzDetailEdit", "de.willuhn.jameica.hbci.gui.views.UmsatzDetail",
+            "de.willuhn.jameica.hbci.gui.views.KontoList", ""))
+            check(!HibiscusTransactionDeleter.isTransactionListView(other), "not reloaded: '" + other + "'");
+        check(!HibiscusTransactionDeleter.isTransactionListView(null), "null view");
     }
 
     private static void acceptsOnlyCanonicalTransactionIds()

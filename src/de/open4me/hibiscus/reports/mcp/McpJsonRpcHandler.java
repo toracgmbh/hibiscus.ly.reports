@@ -555,6 +555,7 @@ public final class McpJsonRpcHandler
             return;
         }
         result.put("confirmed", confirmed);
+        int deletedCount = 0;
         for (String id : candidates.keySet())
         {
             ObjectNode entry = entries.get(id);
@@ -567,12 +568,23 @@ public final class McpJsonRpcHandler
             {
                 transactionDeleter.delete(id);
                 entry.put("status", "deleted");
+                deletedCount++;
             }
             catch (Exception e)
             {
                 entry.put("status", "error");
                 entry.put("message", describe(e));
             }
+        }
+        if (deletedCount == 0)
+            return;
+        try
+        {
+            transactionDeleter.refreshOpenViews();
+        }
+        catch (Exception e)
+        {
+            // The deletions already happened; a view that stays stale must not change the reported result.
         }
     }
 

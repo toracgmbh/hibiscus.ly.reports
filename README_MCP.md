@@ -368,6 +368,12 @@ löscht nichts. Die Bestätigung gilt für den ganzen Aufruf. Schlägt das
 Löschen eines einzelnen Umsatzes fehl, steht bei diesem Umsatz in `results`
 der Status `error`; bereits gelöschte Umsätze bleiben gelöscht.
 
+Ist beim Löschen die Ansicht „Umsätze“ oder „Umsätze nach Kategorien“
+geöffnet, lädt Hibiscus sie danach neu, damit die gelöschten Einträge
+verschwinden. Andere Ansichten, etwa die Kontodetails mit ihren Eingabefeldern,
+werden nicht neu geladen, damit keine ungespeicherten Änderungen verloren gehen;
+dort sind gelöschte Umsätze erst nach dem Aktualisieren weg.
+
 Ist niemand am Rechner, der den Dialog bestätigen kann, zum Beispiel bei einem
 Zugriff aus der Ferne über ngrok, wird nichts gelöscht. Dasselbe gilt für
 Hibiscus ohne Oberfläche (Server-Modus), weil dort keine Bestätigung möglich

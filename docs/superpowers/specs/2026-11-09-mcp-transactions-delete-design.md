@@ -103,6 +103,12 @@ Processing:
    - "Yes": delete each found transaction individually. Success →
      `deleted`; an exception → `error` with the message. A failure on one ID
      does not stop the others.
+   - If at least one transaction was deleted and the current view is a
+     read-only transaction list ("Umsätze", "Umsätze nach Kategorien"), it is
+     reloaded. Jameica tables only drop rows whose own object instance was
+     deleted, so the deletion message alone leaves stale rows. Views with
+     input fields are not reloaded, so unsaved edits are not lost. Added
+     after the manual test found stale rows.
 6. Return the result.
 
 Output (structured content):

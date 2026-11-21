@@ -77,6 +77,8 @@ public final class McpJsonRpcHandlerTests
             rejectsNonScalarIds();
             rejectsTooManyIds();
             deleteHandlesCandidateWithoutDate();
+            deleteSkipsRefreshWhenNothingWasDeleted();
+            deleteRefreshFailureKeepsResults();
             acceptsBooleanStringDryRun();
             messageLessConfirmFailureNamesExceptionClass();
         }
@@ -547,6 +549,7 @@ public final class McpJsonRpcHandlerTests
         checkEquals("unknown", results.get(2).path("status").asText(), "dry run status x");
         check(deleter.confirmCalls.isEmpty(), "dry run does not confirm");
         check(deleter.deleted.isEmpty(), "dry run does not delete");
+        checkEquals(0, deleter.refreshCalls, "dry run does not refresh views");
         check(result.path("dryRun").asBoolean(), "dry run flag");
         check(!result.has("confirmed"), "dry run has no confirmed");
         checkEquals(2, result.path("counts").path("wouldDelete").asInt(), "dry run wouldDelete count");
@@ -576,6 +579,7 @@ public final class McpJsonRpcHandlerTests
         checkEquals(2, deleter.confirmCalls.get(0).size(), "confirm candidates");
         checkEquals(Integer.valueOf(1), deleter.unknownCounts.get(0), "confirm unknown count");
         checkEquals(List.of("1"), deleter.deleted, "deleted ids");
+        checkEquals(1, deleter.refreshCalls, "open views refreshed once after deleting");
         check(result.path("confirmed").isBoolean() && result.path("confirmed").asBoolean(), "confirmed true");
         check(!result.path("dryRun").asBoolean(), "dryRun false");
         JsonNode counts = result.path("counts");
@@ -584,6 +588,30 @@ public final class McpJsonRpcHandlerTests
         checkEquals(1, counts.path("unknown").asInt(), "unknown count");
         checkEquals(0, counts.path("notConfirmed").asInt(), "notConfirmed count");
         checkEquals(0, counts.path("wouldDelete").asInt(), "wouldDelete count");
+    }
+
+    private static void deleteSkipsRefreshWhenNothingWasDeleted() throws Exception
+    {
+        FakeTransactionDeleter deleter = deleterWithExisting("1");
+        deleter.failingDeletes.add("1");
+        deleter.answer = true;
+        McpJsonRpcHandler handler = handler(new FakeTransactionProvider(), deleter, () -> true);
+        JsonNode result = result(callDelete(handler, "{\"ids\":[\"1\"]}"));
+        checkEquals("error", result.path("results").get(0).path("status").asText(), "failed delete status");
+        checkEquals(0, deleter.refreshCalls, "no refresh when nothing was deleted");
+    }
+
+    private static void deleteRefreshFailureKeepsResults() throws Exception
+    {
+        FakeTransactionDeleter deleter = deleterWithExisting("1");
+        deleter.answer = true;
+        deleter.failingRefresh = true;
+        McpJsonRpcHandler handler = handler(new FakeTransactionProvider(), deleter, () -> true);
+        JsonNode result = result(callDelete(handler, "{\"ids\":[\"1\"]}"));
+        checkEquals(1, deleter.refreshCalls, "refresh attempted");
+        checkEquals("deleted", result.path("results").get(0).path("status").asText(),
+            "deletion still reported after refresh failure");
+        checkEquals(1, result.path("counts").path("deleted").asInt(), "deleted count after refresh failure");
     }
 
     private static void declinedDeleteDeletesNothing() throws Exception
@@ -597,6 +625,7 @@ public final class McpJsonRpcHandlerTests
         checkEquals("notConfirmed", results.get(1).path("status").asText(), "declined status 2");
         checkEquals("unknown", results.get(2).path("status").asText(), "declined status x");
         check(deleter.deleted.isEmpty(), "declined deletes nothing");
+        checkEquals(0, deleter.refreshCalls, "declined does not refresh views");
         check(result.path("confirmed").isBoolean() && !result.path("confirmed").asBoolean(), "confirmed false");
         check(!result.has("confirmError"), "no confirmError when declined");
         checkEquals(2, result.path("counts").path("notConfirmed").asInt(), "declined notConfirmed count");
@@ -971,6 +1000,8 @@ public final class McpJsonRpcHandlerTests
         private final List<List<Candidate>> confirmCalls = new ArrayList<>();
         private final List<Integer> unknownCounts = new ArrayList<>();
         private final List<String> deleted = new ArrayList<>();
+        private int refreshCalls;
+        private boolean failingRefresh;
 
         @Override
         public Optional<Candidate> find(String id)
@@ -997,6 +1028,14 @@ public final class McpJsonRpcHandlerTests
             if (failingDeletes.contains(id))
                 throw new IllegalStateException("Loeschen fehlgeschlagen " + id);
             deleted.add(id);
+        }
+
+        @Override
+        public void refreshOpenViews()
+        {
+            refreshCalls++;
+            if (failingRefresh)
+                throw new IllegalStateException("Ansicht nicht neu geladen");
         }
     }
 
