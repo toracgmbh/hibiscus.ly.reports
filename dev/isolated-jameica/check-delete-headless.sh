@@ -44,10 +44,10 @@ AFTER=$(tool hibiscus_transactions_list "{\"accountId\":\"$EUR\",\"all\":true,\"
 ok "$(jq --arg id "$P2" '[.result.structuredContent.transactions[].id] | index($id) != null' <<<"$AFTER")" "server mode: transaction still present" ""
 
 BAD=$(tool hibiscus_transactions_delete '{"ids":[{"id":"1"}]}')
-ok "$(jq '.error.data | contains("nur Umsatz-IDs als Text oder Zahl")' <<<"$BAD")" "non-scalar id rejected" "$BAD"
+ok "$(jq '(.error.data // "") | contains("nur Umsatz-IDs als Text oder Zahl")' <<<"$BAD")" "non-scalar id rejected" "$BAD"
 BAD=$(tool hibiscus_transactions_delete '{"ids":["1"],"dryRun":"yes"}')
-ok "$(jq '.error.data | contains("dryRun: true oder false")' <<<"$BAD")" "dryRun 'yes' rejected" "$BAD"
+ok "$(jq '(.error.data // "") | contains("dryRun: true oder false")' <<<"$BAD")" "dryRun 'yes' rejected" "$BAD"
 MANY=$(jq -cn '[range(1;202) | tostring]')
 BAD=$(tool hibiscus_transactions_delete "{\"ids\":$MANY,\"dryRun\":true}")
-ok "$(jq '.error.data | contains("hoechstens 200")' <<<"$BAD")" "201 ids rejected" "$BAD"
+ok "$(jq '(.error.data // "") | contains("hoechstens 200")' <<<"$BAD")" "201 ids rejected" "$BAD"
 finish
