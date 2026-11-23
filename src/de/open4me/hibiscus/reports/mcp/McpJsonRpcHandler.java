@@ -1,6 +1,7 @@
 package de.open4me.hibiscus.reports.mcp;
 
 import java.io.InputStream;
+import java.lang.reflect.InvocationTargetException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
@@ -160,7 +161,7 @@ public final class McpJsonRpcHandler
             {
                 case "initialize" -> success(id, initialize());
                 case "tools/list" -> success(id, toolsList());
-                case "tools/call" -> success(id, toolsCall(request.path("params")));
+                case "tools/call" -> toolsCall(id, request.path("params"));
                 case "resources/list" -> success(id, resourcesList());
                 case "resources/read" -> success(id, resourcesRead(request.path("params")));
                 default -> error(id, -32601, "Method not found", method);
@@ -237,34 +238,67 @@ public final class McpJsonRpcHandler
         return result;
     }
 
-    private ObjectNode toolsCall(JsonNode params)
+    /**
+     * Fuehrt tools/call aus. Wie in der MCP-Spezifikation (2025-11-25, SEP-1303) unterschieden:
+     * Protokollfehler (Tool-Name fehlt oder unbekannt) bleiben JSON-RPC-Fehler -32602 mit dem Grund in
+     * message. Jeder Fehler bei der Ausfuehrung eines Tools, auch bei der Pruefung seiner Argumente, wird
+     * als Tool-Ergebnis mit isError=true gemeldet, damit das Sprachmodell die Meldung sieht und den Aufruf
+     * korrigieren kann.
+     */
+    private ObjectNode toolsCall(JsonNode id, JsonNode params)
     {
         String name = text(params.get("name"));
+        if (name == null || name.isBlank())
+            return error(id, -32602, "Tool-Name fehlt (params.name).", null);
+        Function<JsonNode, ObjectNode> builtIn = builtInTool(name);
+        ReportMcpToolProviders.Provider provider = null;
+        if (builtIn == null)
+        {
+            // Ein Tool mit dem Praefix eines Providers gilt als bekannt; der Provider entscheidet selbst.
+            provider = ReportMcpToolProviders.load().find(name);
+            if (provider == null)
+                return error(id, -32602, "Unbekanntes Tool: " + name, null);
+        }
+
         JsonNode arguments = params.path("arguments");
+        try
+        {
+            ObjectNode result = builtIn != null ? builtIn.apply(arguments)
+                : providerToolCall(provider, name, arguments);
+            return success(id, result);
+        }
+        catch (Exception e)
+        {
+            return success(id, toolError(describe(e)));
+        }
+    }
+
+    private Function<JsonNode, ObjectNode> builtInTool(String name)
+    {
         return switch (name)
         {
-            case "hibiscus_template_objects_list" -> toolResult(templateObjects(), "Template-Objekte geladen.");
-            case "hibiscus_template_render" -> toolResult(renderTemplate(text(arguments.get("template"))),
-                "Template gerendert.");
-            case "hibiscus_accounts_list" -> toolResult(accounts(arguments), "Konten geladen.");
-            case "hibiscus_accounts_sync" -> toolResult(syncAccounts(arguments), "Kontensynchronisierung beendet.");
-            case "hibiscus_account_groups_list" -> toolResult(accountGroups(arguments), "Kontogruppen geladen.");
-            case "hibiscus_categories_list" -> toolResult(categories(arguments), "Kategorien geladen.");
-            case "hibiscus_transactions_list" -> toolResult(transactions(arguments), "Umsaetze geladen.");
-            case "hibiscus_transactions_delete" -> toolResult(deleteTransactions(arguments),
+            case "hibiscus_template_objects_list" -> arguments -> toolResult(templateObjects(),
+                "Template-Objekte geladen.");
+            case "hibiscus_template_render" -> arguments -> toolResult(
+                renderTemplate(text(arguments.get("template"))), "Template gerendert.");
+            case "hibiscus_accounts_list" -> arguments -> toolResult(accounts(arguments), "Konten geladen.");
+            case "hibiscus_accounts_sync" -> arguments -> toolResult(syncAccounts(arguments),
+                "Kontensynchronisierung beendet.");
+            case "hibiscus_account_groups_list" -> arguments -> toolResult(accountGroups(arguments),
+                "Kontogruppen geladen.");
+            case "hibiscus_categories_list" -> arguments -> toolResult(categories(arguments), "Kategorien geladen.");
+            case "hibiscus_transactions_list" -> arguments -> toolResult(transactions(arguments),
+                "Umsaetze geladen.");
+            case "hibiscus_transactions_delete" -> arguments -> toolResult(deleteTransactions(arguments),
                 "Umsaetze verarbeitet.");
-            case "hibiscus_sepa_transfer_create" -> toolResult(createSepaTransferDraft(arguments),
+            case "hibiscus_sepa_transfer_create" -> arguments -> toolResult(createSepaTransferDraft(arguments),
                 "SEPA-Ueberweisungsentwurf angelegt.");
-            default -> providerToolCall(name, arguments);
+            default -> null;
         };
     }
 
-    private ObjectNode providerToolCall(String name, JsonNode arguments)
+    private ObjectNode providerToolCall(ReportMcpToolProviders.Provider provider, String name, JsonNode arguments)
     {
-        ReportMcpToolProviders.Loaded providers = ReportMcpToolProviders.load();
-        ReportMcpToolProviders.Provider provider = providers.find(name);
-        if (provider == null)
-            throw new IllegalArgumentException("Unbekanntes Tool: " + name);
         try
         {
             JsonNode structured = structured(provider.call(name, arguments(arguments)));
@@ -272,7 +306,10 @@ public final class McpJsonRpcHandler
         }
         catch (Exception e)
         {
-            throw new IllegalStateException("Provider-Tool konnte nicht ausgefuehrt werden: " + e.getMessage(), e);
+            // Der Aufruf per Reflection verpackt die Exception des Providers; gemeldet wird deren Meldung.
+            Throwable cause = e instanceof InvocationTargetException && e.getCause() != null ? e.getCause() : e;
+            throw new IllegalStateException("Provider-Tool konnte nicht ausgefuehrt werden: " + describe(cause),
+                cause);
         }
     }
 
@@ -329,7 +366,7 @@ public final class McpJsonRpcHandler
         }
         catch (Exception e)
         {
-            throw new IllegalStateException("Kontensynchronisierung fehlgeschlagen: " + e.getMessage(), e);
+            throw new IllegalStateException("Kontensynchronisierung fehlgeschlagen: " + describe(e), e);
         }
     }
 
@@ -449,7 +486,7 @@ public final class McpJsonRpcHandler
         }
         catch (Exception e)
         {
-            throw new IllegalStateException("Kategorien konnten nicht geladen werden: " + e.getMessage(), e);
+            throw new IllegalStateException("Kategorien konnten nicht geladen werden: " + describe(e), e);
         }
         result.put("count", array.size());
         return result;
@@ -642,7 +679,7 @@ public final class McpJsonRpcHandler
         catch (Exception e)
         {
             throw new IllegalStateException("SEPA-Ueberweisungsentwurf konnte nicht angelegt werden: "
-                + e.getMessage(), e);
+                + describe(e), e);
         }
         ObjectNode result = mapper.createObjectNode();
         result.put("id", draft.id());
@@ -850,6 +887,15 @@ public final class McpJsonRpcHandler
         result.set("structuredContent", structured);
         ArrayNode content = result.putArray("content");
         content.addObject().put("type", "text").put("text", text + "\n\n" + structured.toPrettyString());
+        return result;
+    }
+
+    /** Tool-Ergebnis fuer einen Fehler bei der Ausfuehrung: Meldung als Text, isError=true. */
+    private ObjectNode toolError(String message)
+    {
+        ObjectNode result = mapper.createObjectNode();
+        result.putArray("content").addObject().put("type", "text").put("text", message);
+        result.put("isError", true);
         return result;
     }
 
@@ -1342,7 +1388,7 @@ public final class McpJsonRpcHandler
         throw new IllegalArgumentException(name + ": true oder false angeben.");
     }
 
-    private static String describe(Exception e)
+    private static String describe(Throwable e)
     {
         String message = e.getMessage();
         return message == null || message.isBlank() ? e.getClass().getSimpleName() : message;

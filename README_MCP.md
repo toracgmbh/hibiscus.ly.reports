@@ -235,6 +235,22 @@ Der MCP-Server kann folgendermaßen hinzugefügt werden:
 Objekte, die andere Plugins per `hibiscus.ly.reports.template.context`
 bereitstellen, sind im MCP-Kontext ebenfalls verfügbar.
 
+### Fehlermeldungen
+
+Scheitert ein Tool bei der Ausführung, etwa weil ein Pflichtfeld fehlt, der
+Betrag ungültig oder der Verwendungszweck zu lang ist oder die Funktion im
+MCP-Dialog ausgeschaltet ist, kommt die Meldung als normales Ergebnis von
+`tools/call` mit `isError: true` zurück, z.B.
+`{"content":[{"type":"text","text":"…"}],"isError":true}`. So sieht das
+Sprachmodell den Grund und kann den Aufruf korrigiert wiederholen. Hat ein
+Fehler keine eigene Meldung, steht dort der Name der Exception.
+
+Als JSON-RPC-Fehler kommen nur Protokollfehler zurück: ungültiges JSON
+(`-32700`), eine ungültige Anfrage (`-32600`), eine unbekannte Methode
+(`-32601`) sowie bei `tools/call` ein fehlender oder unbekannter Tool-Name
+(`-32602`, Grund in `message`). Unerwartete Fehler außerhalb der
+Tool-Ausführung, z.B. bei `resources/read`, bleiben `-32603`.
+
 ## Konten auflisten
 
 `hibiscus_accounts_list` nutzt standardmäßig aktive Konten. Mit
@@ -477,5 +493,11 @@ Andere Plugins können eigene Template-Objekte und eigene strukturierte
 MCP-Tools registrieren. Wenn zum Beispiel der Depotviewer installiert ist,
 können dadurch Tools wie `depotviewer_depots_list`,
 `depotviewer_portfolio_list` oder `depotviewer_orders_list` erscheinen.
+
+Wirft das Tool eines anderen Plugins eine Exception, meldet der Server deren
+Meldung ebenfalls als Tool-Ergebnis mit `isError: true`. Ein Tool-Name mit dem
+Präfix eines registrierten Plugins wird immer an dieses Plugin weitergereicht;
+kennt das Plugin das Tool nicht, ist das ebenfalls ein Tool-Ergebnis mit
+`isError: true`.
 
 Entwicklerdetails stehen in [DEVELOPMENT.md](DEVELOPMENT.md).
