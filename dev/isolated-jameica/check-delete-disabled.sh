@@ -9,5 +9,5 @@ bash "$BASE/wait.sh" > /dev/null || exit 1
 TOOLS=$(bash "$BASE/mcp.sh" '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
 ok "$(jq '([.result.tools[].name] | index("hibiscus_transactions_delete")) == null and ([.result.tools[].name] | index("hibiscus_transactions_list")) != null' <<<"$TOOLS")" "setting off: delete tool not listed" "$TOOLS"
 CALL=$(bash "$BASE/mcp.sh" '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"hibiscus_transactions_delete","arguments":{"ids":["1"],"dryRun":true}}}')
-ok "$(jq '(.error.data // "") | contains("Umsaetze loeschen ist deaktiviert")' <<<"$CALL")" "setting off: call refused" "$CALL"
+ok "$(jq '(if .result.isError then .result.content[0].text else "" end) | contains("Umsaetze loeschen ist deaktiviert")' <<<"$CALL")" "setting off: call refused" "$CALL"
 finish

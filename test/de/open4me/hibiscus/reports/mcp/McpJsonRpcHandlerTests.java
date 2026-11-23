@@ -85,6 +85,12 @@ public final class McpJsonRpcHandlerTests
             passesTransferPurposesThroughUnchanged();
             rejectsAdditionalPurposesThatAreNotAList();
             returnsStoredPurpose();
+            reportsToolExceptionAsToolResult();
+            reportsMessageLessToolExceptionWithClassName();
+            reportsProviderToolFailureAsToolResult();
+            rejectsUnknownToolAsProtocolError();
+            rejectsMissingToolNameAsProtocolError();
+            keepsResourceErrorsAsJsonRpcErrors();
         }
         catch (Exception e)
         {
@@ -360,8 +366,7 @@ public final class McpJsonRpcHandlerTests
               }
             }}
             """));
-        check(response.has("error"), "disabled write access rejected");
-        check(response.path("error").path("data").asText().contains("Ueberweisungen anlegen"),
+        check(toolError(response).contains("Ueberweisungen anlegen"),
             "disabled transfer creation message");
     }
 
@@ -379,8 +384,7 @@ public final class McpJsonRpcHandlerTests
               }
             }}
             """));
-        check(response.has("error"), "invalid transfer rejected");
-        check(response.path("error").path("data").asText().contains("Betrag"), "invalid amount message");
+        check(toolError(response).contains("Betrag"), "invalid amount message");
     }
 
     private static void rejectsTransferDraftWithFriendlyRequiredFieldMessage() throws Exception
@@ -396,8 +400,7 @@ public final class McpJsonRpcHandlerTests
               }
             }}
             """));
-        check(response.has("error"), "missing iban rejected");
-        check(response.path("error").path("data").asText().contains("Empfänger-IBAN"),
+        check(toolError(response).contains("Empfänger-IBAN"),
             "missing iban message");
     }
 
@@ -469,8 +472,7 @@ public final class McpJsonRpcHandlerTests
         for (String arguments : List.of("{\"ids\":[{\"id\":\"7\"}]}", "{\"ids\":[[\"7\"]]}", "{\"ids\":[null]}"))
         {
             JsonNode response = callDelete(handler, arguments);
-            check(response.has("error"), "non-scalar id rejected: " + arguments);
-            check(response.path("error").path("data").asText().contains("nur Umsatz-IDs als Text oder Zahl"),
+            check(toolError(response).contains("nur Umsatz-IDs als Text oder Zahl"),
                 "non-scalar id message: " + arguments);
         }
         checkNoDeleterCalls(deleter);
@@ -484,15 +486,14 @@ public final class McpJsonRpcHandlerTests
         for (int i = 1; i <= 201; i++)
             ids.append(i == 1 ? "" : ",").append('"').append(i).append('"');
         JsonNode response = callDelete(handler, "{\"ids\":[" + ids + "]}");
-        check(response.has("error"), "more than 200 ids rejected");
-        check(response.path("error").path("data").asText().contains("hoechstens 200 Umsatz-IDs"),
+        check(toolError(response).contains("hoechstens 200 Umsatz-IDs"),
             "too many ids message");
         checkNoDeleterCalls(deleter);
 
         StringBuilder twoHundred = new StringBuilder();
         for (int i = 1; i <= 200; i++)
             twoHundred.append(i == 1 ? "" : ",").append('"').append(i).append('"');
-        check(!callDelete(handler, "{\"ids\":[" + twoHundred + "],\"dryRun\":true}").has("error"),
+        check(isToolSuccess(callDelete(handler, "{\"ids\":[" + twoHundred + "],\"dryRun\":true}")),
             "exactly 200 ids accepted");
     }
 
@@ -515,11 +516,12 @@ public final class McpJsonRpcHandlerTests
         AtomicBoolean enabled = new AtomicBoolean(false);
         McpJsonRpcHandler handler = handler(new FakeTransactionProvider(), deleter, enabled::get);
         check(!toolNames(handler).contains("hibiscus_transactions_delete"), "delete tool absent while off");
-        check(callDelete(handler, "{\"ids\":[\"1\"]}").has("error"), "delete call refused while off");
+        check(toolError(callDelete(handler, "{\"ids\":[\"1\"]}")).contains("Umsaetze loeschen ist deaktiviert"),
+            "delete call refused while off");
         enabled.set(true);
         check(toolNames(handler).contains("hibiscus_transactions_delete"), "delete tool present after enabling");
         JsonNode response = callDelete(handler, "{\"ids\":[\"1\"]}");
-        check(!response.has("error"), "delete call succeeds after enabling");
+        check(isToolSuccess(response), "delete call succeeds after enabling");
         checkEquals("deleted", result(response).path("results").get(0).path("status").asText(),
             "status after enabling");
     }
@@ -529,8 +531,7 @@ public final class McpJsonRpcHandlerTests
         FakeTransactionDeleter deleter = new FakeTransactionDeleter();
         McpJsonRpcHandler handler = handler(new FakeTransactionProvider(), deleter, () -> false);
         JsonNode response = callDelete(handler, "{\"ids\":[\"1\"]}");
-        check(response.has("error"), "disabled delete rejected");
-        check(response.path("error").path("data").asText().contains("Umsaetze loeschen"),
+        check(toolError(response).contains("Umsaetze loeschen"),
             "disabled delete message");
         checkNoDeleterCalls(deleter);
     }
@@ -542,8 +543,7 @@ public final class McpJsonRpcHandlerTests
         for (String arguments : List.of("{}", "{\"ids\":[]}"))
         {
             JsonNode response = callDelete(handler, arguments);
-            check(response.has("error"), "delete without ids rejected: " + arguments);
-            check(response.path("error").path("data").asText().contains("mindestens eine Umsatz-ID"),
+            check(toolError(response).contains("mindestens eine Umsatz-ID"),
                 "delete without ids message: " + arguments);
         }
         checkNoDeleterCalls(deleter);
@@ -710,9 +710,8 @@ public final class McpJsonRpcHandlerTests
         for (String value : List.of("\"yes\"", "1", "0", "\"\"", "{}", "[]"))
         {
             JsonNode response = callDelete(handler, "{\"ids\":[\"1\"],\"dryRun\":" + value + "}");
-            check(response.has("error"), "non-boolean dryRun rejected: " + value);
-            check(response.path("error").path("data").asText().contains("dryRun: true oder false angeben."),
-                "non-boolean dryRun message: " + value + " " + response.path("error"));
+            check(toolError(response).contains("dryRun: true oder false angeben."),
+                "non-boolean dryRun message: " + value + " " + response);
         }
         checkNoDeleterCalls(deleter);
     }
@@ -745,8 +744,25 @@ public final class McpJsonRpcHandlerTests
 
     private static JsonNode result(JsonNode response)
     {
-        check(!response.has("error"), "unexpected error: " + response.path("error"));
+        check(isToolSuccess(response), "unexpected error: " + response);
         return response.path("result").path("structuredContent");
+    }
+
+    private static boolean isToolSuccess(JsonNode response)
+    {
+        return !response.has("error") && !response.path("result").path("isError").asBoolean(false);
+    }
+
+    /** Meldung eines Tool-Fehlers; prueft, dass er als Tool-Ergebnis mit isError=true kommt. */
+    private static String toolError(JsonNode response)
+    {
+        check(!response.has("error"), "tool failure is no JSON-RPC error: " + response);
+        JsonNode result = response.path("result");
+        check(result.path("isError").asBoolean(false), "tool failure has isError=true: " + response);
+        check(!result.has("structuredContent"), "tool failure has no structuredContent: " + response);
+        checkEquals(1, result.path("content").size(), "tool failure has one content item");
+        checkEquals("text", result.path("content").path(0).path("type").asText(), "tool failure content type");
+        return result.path("content").path(0).path("text").asText();
     }
 
     private static List<String> toolNames(McpJsonRpcHandler handler) throws Exception
@@ -797,7 +813,7 @@ public final class McpJsonRpcHandlerTests
               }
             }}
             """));
-        check(!response.has("error"), "multi-line purpose accepted by the handler");
+        check(isToolSuccess(response), "multi-line purpose accepted by the handler");
         checkEquals("Rechnung 4711", writer.request.purpose(), "purpose passed on");
         checkEquals("vom 01.01.2026", writer.request.purpose2(), "purpose2 passed on");
         checkEquals(List.of("Auftrag 123456"), writer.request.additionalPurposes(),
@@ -820,8 +836,7 @@ public final class McpJsonRpcHandlerTests
               }
             }}
             """));
-        check(response.has("error"), "additional purposes without array rejected");
-        check(response.path("error").path("data").asText().contains("Liste"), "list message");
+        check(toolError(response).contains("Liste"), "list message");
     }
 
     private static void returnsStoredPurpose() throws Exception
@@ -844,6 +859,101 @@ public final class McpJsonRpcHandlerTests
         checkEquals("Rechnung 4711 vom 01.01.2026 Auftrag 123456",
             response.path("result").path("structuredContent").path("purpose").asText(),
             "response shows the stored purpose");
+    }
+
+    private static void reportsToolExceptionAsToolResult() throws Exception
+    {
+        FakeTransferDraftWriter writer = new FakeTransferDraftWriter();
+        writer.failure = new IllegalStateException("Konto 4711 ist gesperrt.");
+        JsonNode response = MAPPER.readTree(handler(new FakeTransactionProvider(), writer, true)
+            .handle(transferCall(40)));
+        checkEquals(40, response.path("id").asInt(), "tool failure keeps the request id");
+        checkEquals("SEPA-Ueberweisungsentwurf konnte nicht angelegt werden: Konto 4711 ist gesperrt.",
+            toolError(response), "tool failure message");
+    }
+
+    private static void reportsMessageLessToolExceptionWithClassName() throws Exception
+    {
+        FakeTransferDraftWriter writer = new FakeTransferDraftWriter();
+        writer.failure = new UnsupportedOperationException();
+        String message = toolError(MAPPER.readTree(handler(new FakeTransactionProvider(), writer, true)
+            .handle(transferCall(41))));
+        checkEquals("SEPA-Ueberweisungsentwurf konnte nicht angelegt werden: UnsupportedOperationException",
+            message, "message-less tool failure names the exception class");
+
+        withProviderExtension(() -> {
+            String providerMessage = toolError(request("""
+                {"jsonrpc":"2.0","id":42,"method":"tools/call","params":{"name":"fake_items_silent"}}
+                """));
+            checkEquals("Provider-Tool konnte nicht ausgefuehrt werden: UnsupportedOperationException",
+                providerMessage, "message-less provider failure names the exception class");
+        });
+    }
+
+    private static void reportsProviderToolFailureAsToolResult() throws Exception
+    {
+        withProviderExtension(() -> {
+            String message = toolError(request("""
+                {"jsonrpc":"2.0","id":43,"method":"tools/call","params":{
+                  "name":"fake_items_fail",
+                  "arguments":{"limit":5000}
+                }}
+                """));
+            checkEquals("Provider-Tool konnte nicht ausgefuehrt werden: limit: hoechstens 100.", message,
+                "provider failure message is unwrapped from the reflection call");
+        });
+    }
+
+    private static void rejectsUnknownToolAsProtocolError() throws Exception
+    {
+        JsonNode response = request("""
+            {"jsonrpc":"2.0","id":44,"method":"tools/call","params":{"name":"hibiscus_unknown","arguments":{}}}
+            """);
+        check(!response.has("result"), "unknown tool has no result");
+        checkEquals(-32602, response.path("error").path("code").asInt(), "unknown tool error code");
+        checkEquals("Unbekanntes Tool: hibiscus_unknown", response.path("error").path("message").asText(),
+            "unknown tool error message");
+        checkEquals(44, response.path("id").asInt(), "unknown tool keeps the request id");
+    }
+
+    private static void rejectsMissingToolNameAsProtocolError() throws Exception
+    {
+        for (String params : List.of(",\"params\":{\"arguments\":{}}", ",\"params\":{\"name\":\" \"}", ""))
+        {
+            JsonNode response = request("{\"jsonrpc\":\"2.0\",\"id\":45,\"method\":\"tools/call\"" + params + "}");
+            check(!response.has("result"), "missing tool name has no result: " + params);
+            checkEquals(-32602, response.path("error").path("code").asInt(), "missing tool name code: " + params);
+            check(response.path("error").path("message").asText().contains("Tool-Name fehlt"),
+                "missing tool name message: " + params);
+        }
+    }
+
+    private static void keepsResourceErrorsAsJsonRpcErrors() throws Exception
+    {
+        JsonNode response = request("""
+            {"jsonrpc":"2.0","id":46,"method":"resources/read","params":{"uri":"hibiscus-reports://unknown"}}
+            """);
+        checkEquals(-32603, response.path("error").path("code").asInt(), "unknown resource error code");
+        check(response.path("error").path("data").asText().contains("Unbekannte Resource"),
+            "unknown resource error data");
+        checkEquals(-32601, request("{\"jsonrpc\":\"2.0\",\"id\":47,\"method\":\"tools/unknown\"}")
+            .path("error").path("code").asInt(), "unknown method error code");
+    }
+
+    private static String transferCall(int id)
+    {
+        return """
+            {"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{
+              "name":"hibiscus_sepa_transfer_create",
+              "arguments":{
+                "accountId":"active",
+                "recipientName":"Max Mustermann",
+                "recipientIban":"DE02120300000000202051",
+                "amount":12.34,
+                "purpose":"Rechnung 4711"
+              }
+            }}
+            """.formatted(id);
     }
 
     private static void withProviderExtension(ThrowingRunnable runnable) throws Exception
@@ -939,11 +1049,15 @@ public final class McpJsonRpcHandlerTests
             tool.put("title", "Items auflisten");
             tool.put("description", "Test-Items auflisten");
             tool.put("inputSchema", schema);
-            return List.of(tool);
+            return List.of(tool, Map.of("name", "items_fail"), Map.of("name", "items_silent"));
         }
 
         public Object call(String localToolName, Map<String, Object> arguments)
         {
+            if ("items_fail".equals(localToolName))
+                throw new IllegalArgumentException("limit: hoechstens 100.");
+            if ("items_silent".equals(localToolName))
+                throw new UnsupportedOperationException();
             checkEquals("items_list", localToolName, "provider local tool name");
             List<Map<String, Object>> items = List.of(Map.of("name", "eins"), Map.of("name", "zwei"));
             return Map.of("items", items);
@@ -1062,11 +1176,14 @@ public final class McpJsonRpcHandlerTests
     private static final class FakeTransferDraftWriter implements SepaTransferDraftWriter
     {
         private Request request;
+        private RuntimeException failure;
 
         @Override
         public Result create(Request request)
         {
             this.request = request;
+            if (failure != null)
+                throw failure;
             // Wie HibiscusSepaTransferDraftWriter: zusammenfuehren und pruefen, gespeicherten Zweck melden.
             String purpose = SepaPurpose.mergeForHibiscus(request.purpose(), request.purpose2(),
                 request.additionalPurposes());

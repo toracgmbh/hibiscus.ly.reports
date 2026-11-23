@@ -121,6 +121,11 @@ Provider sollten nur serialisierbare Werte zurueckgeben: `Map`, `List`,
 `String`, `Number`, `Boolean`, `Date`, `LocalDate`, `LocalDateTime` oder
 `null`. Interne Datenbankobjekte sollten nicht zurueckgegeben werden.
 
+Scheitert ein Tool, etwa an ungueltigen Argumenten, wirft `call` eine Exception
+mit einer verstaendlichen Meldung. Der MCP-Server meldet sie als Tool-Ergebnis
+mit `isError: true`, damit das Sprachmodell den Grund sieht; ohne Meldung steht
+dort der Klassenname der Exception.
+
 Proxy-Objekte sollten deshalb weiterhin eine endusernahe API anbieten und keine
 internen Datenbankobjekte durchreichen. Methoden wie `aktive`, `alle`, `limit`,
 `letzteTage` und `zeitraum` bleiben die bevorzugte Form fuer begrenzbare

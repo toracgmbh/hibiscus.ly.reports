@@ -1,3 +1,4 @@
+	[Fix] MCP: Fehler bei der Ausführung eines Tools (z.B. Pflichtfeld fehlt, Verwendungszweck zu lang) kommen als Tool-Ergebnis mit isError und lesbarer Meldung statt als JSON-RPC-Fehler "Internal error"; unbekannte Tools melden -32602
 	[Feature] MCP: Umsatz-ID in hibiscus_transactions_list
 	[Feature] MCP: Umsätze löschen (optional, mit Bestätigung in Hibiscus)
 	[Fix] MCP/Automatisierung: SEPA-Überweisung mit zweiter Verwendungszweck-Zeile oder weiteren Verwendungszwecken schlug mit "Internal error" fehl; die Zeilen werden jetzt zu einem Verwendungszweck zusammengeführt; die Bestätigung der Automatisierung zeigt den gespeicherten Zweck; Länge und Zeichen werden vor der Bestätigung wie in Hibiscus geprüft; MCP meldet den gespeicherten Verwendungszweck
